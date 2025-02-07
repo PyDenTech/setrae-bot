@@ -4,7 +4,7 @@ const axios = require("axios");
 const { Pool } = require("pg");
 
 // -----------------------------------------------------
-// Configurações de ambiente (ajuste conforme seu .env)
+// Configurações de ambiente
 // -----------------------------------------------------
 const WHATSAPP_API_URL = "https://graph.facebook.com/v20.0";
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
@@ -15,35 +15,34 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const BOT_PORT = process.env.BOT_PORT || 3000;
 
 // -----------------------------------------------------
-// Conexão com o banco de dados (Postgres / PostGIS)
+// Conexão com o Banco (Postgres / PostGIS)
 // -----------------------------------------------------
 const pool = new Pool({
   connectionString: DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: { rejectUnauthorized: false },
 });
 
 // -----------------------------------------------------
-// Variáveis de estado do usuário no BOT
+// Armazena estado e timers de cada usuário
 // -----------------------------------------------------
 let userState = {};
 let userTimers = {};
 const TIMEOUT_DURATION = 10 * 60 * 1000; // 10 minutos
 
 // -----------------------------------------------------
-// Servidor Express do BOT
+// Criação do servidor Express
 // -----------------------------------------------------
 const app = express();
 app.use(express.json());
 
 // -----------------------------------------------------
-// Webhook de verificação (Facebook/WhatsApp)
+// 1) Verificação do Webhook (Facebook/WhatsApp)
 // -----------------------------------------------------
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
+
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
     console.log("Webhook verificado com sucesso!");
     return res.status(200).send(challenge);
@@ -52,7 +51,7 @@ app.get("/webhook", (req, res) => {
 });
 
 // -----------------------------------------------------
-// Webhook principal: recebe mensagens do WhatsApp
+// 2) Webhook principal - recebe mensagens
 // -----------------------------------------------------
 app.post("/webhook", async (req, res) => {
   const data = req.body;
@@ -74,7 +73,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(400);
     }
 
-    // Timer de inatividade
+    // Se houver timer ativo, resetamos
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
@@ -87,9 +86,9 @@ app.post("/webhook", async (req, res) => {
       }, TIMEOUT_DURATION);
     };
 
-    // -------------------------------------------------
-    // FLUXO PRINCIPAL VIA userState[senderNumber].step
-    // -------------------------------------------------
+    // -----------------------------------------------
+    // Lógica principal via userState[senderNumber].step
+    // -----------------------------------------------
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
         case "termos_uso":
@@ -188,20 +187,22 @@ app.post("/webhook", async (req, res) => {
 
         case "id_matricula_aluno":
           userState[senderNumber].id_matricula_aluno = text;
-          const alunoData = await findStudentByIdOrCpf(text);
-          if (alunoData) {
-            userState[senderNumber].escola_id = alunoData.escola_id;
-            userState[senderNumber].step = "deficiencia";
-            await sendTextMessage(
-              senderNumber,
-              `Aluno encontrado! Nome: ${alunoData.pessoa_nome}. Ele possui alguma deficiência? Responda "Sim" ou "Não".`
-            );
-          } else {
-            await sendTextMessage(
-              senderNumber,
-              "ID de matrícula ou CPF do aluno não encontrado. Verifique e tente novamente."
-            );
-            delete userState[senderNumber];
+          {
+            const alunoData = await findStudentByIdOrCpf(text);
+            if (alunoData) {
+              userState[senderNumber].escola_id = alunoData.escola_id;
+              userState[senderNumber].step = "deficiencia";
+              await sendTextMessage(
+                senderNumber,
+                `Aluno encontrado! Nome: ${alunoData.pessoa_nome}. Ele possui alguma deficiência? Responda "Sim" ou "Não".`
+              );
+            } else {
+              await sendTextMessage(
+                senderNumber,
+                "ID de matrícula ou CPF do aluno não encontrado. Verifique e tente novamente."
+              );
+              delete userState[senderNumber];
+            }
           }
           break;
 
@@ -279,15 +280,29 @@ app.post("/webhook", async (req, res) => {
           delete userState[senderNumber];
           break;
 
+        // Quando pedimos localização durante checkStudentTransport
+        case "enviar_localizacao":
+          if (location) {
+            userState[senderNumber].latitude = location.latitude;
+            userState[senderNumber].longitude = location.longitude;
+            await finishCheckStudentTransport(senderNumber);
+          } else {
+            await sendTextMessage(
+              senderNumber,
+              "Não foi possível identificar sua localização. Por favor, envie novamente."
+            );
+          }
+          break;
+
         default:
           await sendInteractiveListMessage(senderNumber);
       }
       setInactivityTimeout();
     }
 
-    // -------------------------------------------------
+    // -----------------------------------------------
     // LIST_REPLY
-    // -------------------------------------------------
+    // -----------------------------------------------
     else if (message.interactive && message.interactive.list_reply) {
       const selectedOption = message.interactive.list_reply.id;
       switch (selectedOption) {
@@ -321,9 +336,9 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // -------------------------------------------------
+    // -----------------------------------------------
     // BUTTON_REPLY
-    // -------------------------------------------------
+    // -----------------------------------------------
     else if (message.interactive && message.interactive.button_reply) {
       const buttonResponse = message.interactive.button_reply.id;
       if (buttonResponse === "confirm_yes") {
@@ -359,9 +374,9 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // -------------------------------------------------
+    // -----------------------------------------------
     // awaiting_aluno_id_or_cpf
-    // -------------------------------------------------
+    // -----------------------------------------------
     else if (userState[senderNumber] === "awaiting_aluno_id_or_cpf") {
       const aluno = await findStudentByIdOrCpf(text);
       if (aluno) {
@@ -395,9 +410,9 @@ Transporte Público: ${infoTransporte}
       setInactivityTimeout();
     }
 
-    // -------------------------------------------------
+    // -----------------------------------------------
     // Se não houver estado
-    // -------------------------------------------------
+    // -----------------------------------------------
     else {
       await sendInteractiveListMessage(senderNumber);
       setInactivityTimeout();
@@ -410,6 +425,7 @@ Transporte Público: ${infoTransporte}
 // -----------------------------------------------------
 // FUNÇÕES DE BANCO E LÓGICA
 // -----------------------------------------------------
+
 async function findStudentByIdOrCpf(idOrCpf) {
   try {
     const client = await pool.connect();
@@ -498,8 +514,7 @@ async function saveRouteRequest(senderNumber) {
 }
 
 // -----------------------------------------------------
-// Novo fluxo para encontrar o ponto mais próximo
-// a partir das rotas que servem a escola do aluno
+// checkStudentTransport (fluxo do aluno usuário transporte)
 // -----------------------------------------------------
 async function checkStudentTransport(to) {
   const aluno = userState[to] ? userState[to].aluno : null;
@@ -511,7 +526,6 @@ async function checkStudentTransport(to) {
     return;
   }
 
-  // Se transporte_escolar_poder_publico for nulo, não é usuário
   if (!aluno.transporte_escolar_poder_publico) {
     await sendInteractiveMessageWithButtons(
       to,
@@ -525,9 +539,7 @@ async function checkStudentTransport(to) {
     return;
   }
 
-  // Se chegou aqui, significa que ele é usuário do transporte (Municipal/Estadual/etc.)
-
-  // Buscamos a rota ou rotas que servem a escola do aluno
+  // Já é usuário (Municipal, Estadual, etc.)
   const schoolId = aluno.escola_id;
   if (!schoolId) {
     await sendTextMessage(
@@ -537,7 +549,6 @@ async function checkStudentTransport(to) {
     return;
   }
 
-  // Passo 1: Encontrar IDs das rotas que atendem essa escola
   const routeIds = await getRoutesBySchool(schoolId);
   if (!routeIds || routeIds.length === 0) {
     await sendTextMessage(
@@ -547,7 +558,6 @@ async function checkStudentTransport(to) {
     return;
   }
 
-  // Passo 2: Obter pontos associados a essas rotas
   const routePoints = await getPointsByRoutes(routeIds);
   if (!routePoints || routePoints.length === 0) {
     await sendTextMessage(
@@ -557,17 +567,70 @@ async function checkStudentTransport(to) {
     return;
   }
 
-  // Passo 3: Calcular o ponto de parada mais próximo da localização do pai
-  // Se a API do BOT já tiver a localização do pai (latitude e longitude), podemos usar
-  // userState[to].latitude / userState[to].longitude
-  // Caso contrário, podemos pedir a localização
   const lat = userState[to].latitude;
   const lng = userState[to].longitude;
+
   if (!lat || !lng) {
     userState[to].step = "enviar_localizacao";
     await sendTextMessage(
       to,
       "Não foi possível identificar suas coordenadas. Por favor, envie sua localização atual."
+    );
+    return;
+  }
+
+  // Se já temos latitude/longitude, finalizamos a busca
+  await finishCheckStudentTransport(to, routePoints);
+}
+
+// -----------------------------------------------------
+// Função chamada após receber localização
+// para finalizar a busca do ponto mais próximo
+// -----------------------------------------------------
+async function finishCheckStudentTransport(to, optionalPoints = null) {
+  // Se routePoints não foi passado, precisamos buscar novamente
+  // pois pode ter sido chamado depois do "enviar_localizacao"
+  let routePoints = optionalPoints;
+  const aluno = userState[to] ? userState[to].aluno : null;
+  if (!aluno) {
+    await sendTextMessage(
+      to,
+      "Não encontramos dados do aluno. Por favor, tente novamente."
+    );
+    return;
+  }
+  if (!aluno.escola_id) {
+    await sendTextMessage(
+      to,
+      "Não foi possível identificar a escola do aluno."
+    );
+    return;
+  }
+  if (!routePoints) {
+    const routeIds = await getRoutesBySchool(aluno.escola_id);
+    if (!routeIds || routeIds.length === 0) {
+      await sendTextMessage(
+        to,
+        "Não há rotas cadastradas para a escola do aluno. Tente novamente mais tarde."
+      );
+      return;
+    }
+    routePoints = await getPointsByRoutes(routeIds);
+    if (!routePoints || routePoints.length === 0) {
+      await sendTextMessage(
+        to,
+        "Não encontramos pontos de parada nessas rotas. Verifique com a secretaria."
+      );
+      return;
+    }
+  }
+
+  const lat = userState[to].latitude;
+  const lng = userState[to].longitude;
+  if (!lat || !lng) {
+    await sendTextMessage(
+      to,
+      "Não foi possível identificar suas coordenadas. Tente novamente mais tarde."
     );
     return;
   }
@@ -583,14 +646,12 @@ async function checkStudentTransport(to) {
     }
   }
 
-  // Passo 4: Enviar o ponto encontrado
   if (!nearestPoint) {
     await sendTextMessage(
       to,
       "Não foi possível encontrar um ponto de parada próximo. Verifique com a secretaria."
     );
   } else {
-    // Criar link do Google Maps
     const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${lat},${lng}&destination=${nearestPoint.latitude},${nearestPoint.longitude}&travelmode=walking`;
 
     await sendTextMessage(
@@ -598,6 +659,11 @@ async function checkStudentTransport(to) {
       `Ponto de parada mais próximo vinculado à rota da escola: *${nearestPoint.nome_ponto}*.\nCoordenadas: ${nearestPoint.latitude}, ${nearestPoint.longitude}.\n[Dica de Rota no Google Maps](${directionsUrl})`
     );
   }
+
+  // Depois de enviar, podemos encerrar ou retornar ao menu principal
+  // delete userState[to]; // Se quiser encerrar fluxo
+  // Ou:
+  // userState[to] = "awaiting_aluno_id_or_cpf"; // Se quiser voltar
 }
 
 // -----------------------------------------------------
@@ -613,7 +679,6 @@ async function getRoutesBySchool(escolaId) {
     `;
     const result = await client.query(query, [escolaId]);
     client.release();
-    // Retorna array com IDs das rotas
     return result.rows.map((row) => row.rota_id);
   } catch (error) {
     console.error("Erro ao buscar rotas por escola:", error);
@@ -633,8 +698,7 @@ async function getPointsByRoutes(routeIds) {
     `;
     const result = await client.query(query, [routeIds]);
     client.release();
-    // Retorna array de pontos
-    return result.rows;
+    return result.rows; // Array de pontos
   } catch (error) {
     console.error("Erro ao buscar pontos das rotas:", error);
     return [];
@@ -798,9 +862,16 @@ async function sendSemedServersMenu(to) {
     type: "interactive",
     interactive: {
       type: "list",
-      header: { type: "text", text: "👩‍🏫 Servidores SEMED" },
-      body: { text: "Selecione a opção desejada:" },
-      footer: { text: "Como podemos ajudar?" },
+      header: {
+        type: "text",
+        text: "👩‍🏫 Servidores SEMED",
+      },
+      body: {
+        text: "Selecione a opção desejada:",
+      },
+      footer: {
+        text: "Como podemos ajudar?",
+      },
       action: {
         button: "Ver Opções",
         sections: [
@@ -900,11 +971,17 @@ async function sendInteractiveMessageWithButtons(
         buttons: [
           {
             type: "reply",
-            reply: { id: button1Id, title: button1Title },
+            reply: {
+              id: button1Id,
+              title: button1Title,
+            },
           },
           {
             type: "reply",
-            reply: { id: button2Id, title: button2Title },
+            reply: {
+              id: button2Id,
+              title: button2Title,
+            },
           },
         ],
       },
@@ -927,7 +1004,7 @@ async function sendInteractiveMessageWithButtons(
 }
 
 // -----------------------------------------------------
-// Inicia servidor do BOT
+// Inicializa o servidor
 // -----------------------------------------------------
 app.listen(BOT_PORT, () => {
   console.log(`BOT rodando na porta ${BOT_PORT}...`);
