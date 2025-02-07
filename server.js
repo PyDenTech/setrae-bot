@@ -440,7 +440,7 @@ app.post("/webhook", async (req, res) => {
           await sendSemedServersMenu(senderNumber);
           break;
 
-        // Submenu: Servidores Escola (agora com 5 opções)
+        // Submenu: Servidores Escola (5 opções)
         case "option_3":
           await sendSchoolServersMenu(senderNumber);
           break;
@@ -716,7 +716,9 @@ Por favor, verifique e providencie um motorista.`;
   }
 }
 
-// Funções zoneamento/rotas
+// -----------------------------------------------------
+// Zoneamento e verificação de rotas
+// -----------------------------------------------------
 async function getZoneInfo(latitude, longitude) {
   const resultObj = { inZone: false, zoneId: null };
   if (!latitude || !longitude) return resultObj;
@@ -1049,7 +1051,6 @@ async function sendSemedServersMenu(to) {
                 title: "1️⃣ Solicitar Motorista",
                 description: "Solicitar transporte",
               },
-              // Removemos "schedule_driver" aqui
               {
                 id: "speak_to_agent",
                 title: "2️⃣ Falar com Atendente",
@@ -1123,12 +1124,12 @@ async function sendSchoolServersMenu(to) {
               },
               {
                 id: "school_option_3",
-                title: "3️⃣ Ver Status de Rotas",
+                title: "3️⃣ Status de Rotas",
                 description: "Consulte a situação das rotas ativas.",
               },
               {
                 id: "school_option_4",
-                title: "4️⃣ Consultar Agenda de Veículos",
+                title: "4️⃣ Agenda Veículos",
                 description: "Ver disponibilidade e horários.",
               },
               {
