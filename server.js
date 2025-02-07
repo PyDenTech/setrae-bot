@@ -16,8 +16,9 @@ const BOT_PORT = process.env.BOT_PORT || 3000;
 
 // -----------------------------------------------------
 // Conexão com o banco de dados (Postgres / PostGIS)
-// (Inclua no banco: ALTER TABLE cocessao_rota
-//  ADD COLUMN comprovante_residencia_path TEXT;)
+// (Certifique-se de ter:
+//  ALTER TABLE cocessao_rota ADD COLUMN comprovante_residencia_path TEXT;
+// )
 // -----------------------------------------------------
 const pool = new Pool({
   connectionString: DATABASE_URL,
@@ -29,18 +30,18 @@ const pool = new Pool({
 // -----------------------------------------------------
 // Variáveis de estado do usuário no BOT
 // -----------------------------------------------------
-let userState = {}; // Armazena passo a passo (dinâmico) de cada usuário
-let userTimers = {}; // Controle de timeout de inatividade
+let userState = {};
+let userTimers = {};
 const TIMEOUT_DURATION = 10 * 60 * 1000; // 10 minutos
 
 // -----------------------------------------------------
-// Criação do servidor Express específico p/ o BOT
+// Servidor Express do BOT
 // -----------------------------------------------------
 const app = express();
 app.use(express.json());
 
 // -----------------------------------------------------
-// 1) Rota de verificação do Webhook (Facebook/WhatsApp)
+// Webhook de verificação (Facebook/WhatsApp)
 // -----------------------------------------------------
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -55,7 +56,7 @@ app.get("/webhook", (req, res) => {
 });
 
 // -----------------------------------------------------
-// 2) Rota principal do Webhook: recebe mensagens
+// Webhook principal: recebe mensagens do WhatsApp
 // -----------------------------------------------------
 app.post("/webhook", async (req, res) => {
   const data = req.body;
@@ -69,30 +70,29 @@ app.post("/webhook", async (req, res) => {
     const message = data.entry[0].changes[0].value.messages[0];
     const senderNumber = message.from;
     const text = message.text ? message.text.body : "";
-    const location = message.location ? message.location : null;
-    const media = message.image || message.document; // Caso chegue imagem ou documento
+    const location = message.location || null;
+    const media = message.image || message.document || null;
 
     if (!senderNumber) {
       console.error("Número do remetente não encontrado na mensagem!");
       return res.sendStatus(400);
     }
 
-    // Reinicia ou cria timer de inatividade
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
         await sendTextMessage(
           senderNumber,
-          "Percebemos que você está ocupado(a). Se precisar de mais ajuda, estamos à disposição. É só nos chamar a qualquer momento."
+          "Percebemos que você está ocupado(a). Se precisar de mais ajuda, é só nos chamar a qualquer momento."
         );
         delete userState[senderNumber];
         delete userTimers[senderNumber];
       }, TIMEOUT_DURATION);
     };
 
-    // -----------------------------------------------
-    // Fluxo de estados do usuário
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // FLUXO PRINCIPAL VIA userState[senderNumber].step
+    // -------------------------------------------------
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
         case "termos_uso":
@@ -193,7 +193,7 @@ app.post("/webhook", async (req, res) => {
           } else {
             await sendTextMessage(
               senderNumber,
-              "ID de matrícula ou CPF do aluno não encontrado. Verifique os dados e tente novamente."
+              "ID de matrícula ou CPF do aluno não encontrado. Verifique e tente novamente."
             );
             delete userState[senderNumber];
           }
@@ -211,10 +211,7 @@ app.post("/webhook", async (req, res) => {
             userState[senderNumber].deficiencia = false;
             userState[senderNumber].laudo_deficiencia_path = null;
             userState[senderNumber].step = "celular_responsavel";
-            await sendTextMessage(
-              senderNumber,
-              "Agora, informe o telefone do responsável:"
-            );
+            await sendTextMessage(senderNumber, "Agora, informe o telefone do responsável:");
           }
           break;
 
@@ -245,12 +242,12 @@ app.post("/webhook", async (req, res) => {
           if (isInsideZone) {
             await sendTextMessage(
               senderNumber,
-              "Localização dentro de um zoneamento cadastrado. (Bairro, Lote ou área encontrada)."
+              "Localização dentro de um zoneamento cadastrado."
             );
           } else {
             await sendTextMessage(
               senderNumber,
-              "Localização fora dos zoneamentos conhecidos. Mas vamos prosseguir."
+              "Localização fora dos zoneamentos conhecidos. Vamos prosseguir."
             );
           }
           userState[senderNumber].step = "observacoes";
@@ -277,9 +274,9 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // -----------------------------------------------
-    // Se for interativo do tipo list_reply
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // MENSAGENS INTERATIVAS (LIST_REPLY)
+    // -------------------------------------------------
     else if (message.interactive && message.interactive.list_reply) {
       const selectedOption = message.interactive.list_reply.id;
       switch (selectedOption) {
@@ -290,12 +287,15 @@ app.post("/webhook", async (req, res) => {
             "Por favor, insira o ID de matrícula ou CPF do aluno:"
           );
           break;
+
         case "option_2":
           await sendSemedServersMenu(senderNumber);
           break;
+
         case "back_to_menu":
           await sendInteractiveListMessage(senderNumber);
           break;
+
         case "end_service":
           await sendTextMessage(
             senderNumber,
@@ -303,15 +303,16 @@ app.post("/webhook", async (req, res) => {
           );
           delete userState[senderNumber];
           break;
+
         default:
           await sendInteractiveListMessage(senderNumber);
       }
       setInactivityTimeout();
     }
 
-    // -----------------------------------------------
-    // Se for interativo do tipo button_reply
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // MENSAGENS INTERATIVAS (BUTTON_REPLY)
+    // -------------------------------------------------
     else if (message.interactive && message.interactive.button_reply) {
       const buttonResponse = message.interactive.button_reply.id;
       if (buttonResponse === "confirm_yes") {
@@ -347,20 +348,23 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // -----------------------------------------------
-    // Se o estado for "awaiting_aluno_id_or_cpf"
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // ESTADO "awaiting_aluno_id_or_cpf"
+    // -------------------------------------------------
     else if (userState[senderNumber] === "awaiting_aluno_id_or_cpf") {
       const aluno = await findStudentByIdOrCpf(text);
       if (aluno) {
         userState[senderNumber] = { aluno };
+        const infoTransporte = aluno.transporte_escolar_poder_publico
+          ? aluno.transporte_escolar_poder_publico
+          : "Não informado (provavelmente não usuário)";
         const alunoInfo = `
 *Dados do Aluno Encontrado*:
 Nome: ${aluno.pessoa_nome}
 CPF: ${aluno.cpf || "Não informado"}
 Escola: ${aluno.nome_escola || "Não vinculada"}
 Matrícula: ${aluno.id_matricula || "N/A"}
-Transporte Público: ${aluno.transporte_escolar_poder_publico === "SIM" ? "Sim" : "Não"}
+Transporte Público: ${infoTransporte}
         `;
         await sendInteractiveMessageWithButtons(
           senderNumber,
@@ -374,15 +378,15 @@ Transporte Público: ${aluno.transporte_escolar_poder_publico === "SIM" ? "Sim" 
       } else {
         await sendTextMessage(
           senderNumber,
-          "ID de matrícula ou CPF não encontrado. Verifique as informações e tente novamente."
+          "ID de matrícula ou CPF não encontrado. Verifique e tente novamente."
         );
       }
       setInactivityTimeout();
     }
 
-    // -----------------------------------------------
-    // Se não houver estado ou não for interativo
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // SE NENHUMA OUTRA CONDIÇÃO
+    // -------------------------------------------------
     else {
       await sendInteractiveListMessage(senderNumber);
       setInactivityTimeout();
@@ -393,7 +397,7 @@ Transporte Público: ${aluno.transporte_escolar_poder_publico === "SIM" ? "Sim" 
 });
 
 // -----------------------------------------------------
-// FUNÇÕES DE BANCO DE DADOS E LÓGICA
+// FUNÇÕES DE BANCO E LÓGICA
 // -----------------------------------------------------
 async function findStudentByIdOrCpf(idOrCpf) {
   try {
@@ -432,7 +436,7 @@ async function saveRouteRequest(senderNumber) {
       celular_responsavel,
       zoneamento,
       observacoes,
-      comprovante_residencia_path
+      comprovante_residencia_path,
     } = userState[senderNumber];
 
     const client = await pool.connect();
@@ -470,7 +474,7 @@ async function saveRouteRequest(senderNumber) {
       comprovante_residencia_path || null,
       latitude,
       longitude,
-      observacoes || null
+      observacoes || null,
     ];
     await client.query(insertQuery, values);
     client.release();
@@ -486,7 +490,7 @@ async function checkStudentTransport(to) {
     await sendTextMessage(to, "Não encontramos dados do aluno. Por favor, tente novamente.");
     return;
   }
-  if (aluno.transporte_escolar_poder_publico === "SIM") {
+  if (aluno.transporte_escolar_poder_publico) {
     const coordinates = await getCoordinatesFromAddress(aluno.bairro || aluno.endereco || "");
     if (coordinates) {
       const nearestStop = await getNearestStop(coordinates);
@@ -608,7 +612,7 @@ function toRad(value) {
 }
 
 // -----------------------------------------------------
-// FUNÇÕES AUXILIARES DE ENVIO DE MENSAGEM
+// FUNÇÕES DE MENSAGEM INTERATIVA
 // -----------------------------------------------------
 async function sendInteractiveListMessage(to) {
   const listMessage = {
@@ -687,9 +691,16 @@ async function sendSemedServersMenu(to) {
     type: "interactive",
     interactive: {
       type: "list",
-      header: { type: "text", text: "👩‍🏫 Servidores SEMED" },
-      body: { text: "Selecione a opção desejada:" },
-      footer: { text: "Como podemos ajudar?" },
+      header: {
+        type: "text",
+        text: "👩‍🏫 Servidores SEMED",
+      },
+      body: {
+        text: "Selecione a opção desejada:",
+      },
+      footer: {
+        text: "Como podemos ajudar?",
+      },
       action: {
         button: "Ver Opções",
         sections: [
@@ -795,7 +806,7 @@ async function sendInteractiveMessageWithButtons(
 }
 
 // -----------------------------------------------------
-// Inicia o servidor do BOT
+// Inicia servidor do BOT
 // -----------------------------------------------------
 app.listen(BOT_PORT, () => {
   console.log(`BOT rodando na porta ${BOT_PORT}...`);
