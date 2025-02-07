@@ -23,20 +23,20 @@ const pool = new Pool({
 });
 
 // -----------------------------------------------------
-// Armazena estado e timers de cada usuário
+// Estado e timers de cada usuário
 // -----------------------------------------------------
 let userState = {};
 let userTimers = {};
 const TIMEOUT_DURATION = 10 * 60 * 1000; // 10 minutos
 
 // -----------------------------------------------------
-// Criação do servidor Express
+// Servidor Express
 // -----------------------------------------------------
 const app = express();
 app.use(express.json());
 
 // -----------------------------------------------------
-// 1) Verificação do Webhook (Facebook/WhatsApp)
+// Verificação do Webhook (Facebook/WhatsApp)
 // -----------------------------------------------------
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -51,7 +51,7 @@ app.get("/webhook", (req, res) => {
 });
 
 // -----------------------------------------------------
-// 2) Webhook principal - recebe mensagens
+// Webhook principal: recebe mensagens do WhatsApp
 // -----------------------------------------------------
 app.post("/webhook", async (req, res) => {
   const data = req.body;
@@ -69,26 +69,22 @@ app.post("/webhook", async (req, res) => {
     const media = message.image || message.document || null;
 
     if (!senderNumber) {
-      console.error("Número do remetente não encontrado na mensagem!");
+      console.error("Número do remetente não encontrado!");
       return res.sendStatus(400);
     }
 
-    // Se houver timer ativo, resetamos
+    // Reseta timer de inatividade
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
-        await sendTextMessage(
+        await endConversation(
           senderNumber,
           "Percebemos que você está ocupado(a). Se precisar de mais ajuda, é só nos chamar a qualquer momento."
         );
-        delete userState[senderNumber];
-        delete userTimers[senderNumber];
       }, TIMEOUT_DURATION);
     };
 
-    // -----------------------------------------------
-    // Lógica principal via userState[senderNumber].step
-    // -----------------------------------------------
+    // Lida com o fluxo principal, usando userState[senderNumber].step
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
         case "termos_uso":
@@ -101,11 +97,10 @@ app.post("/webhook", async (req, res) => {
                 "Ótimo! Por favor, insira o nome completo do responsável pela solicitação:"
               );
             } else {
-              await sendTextMessage(
+              await endConversation(
                 senderNumber,
                 "Você não concordou com os termos. Atendimento encerrado."
               );
-              delete userState[senderNumber];
             }
           }
           break;
@@ -148,7 +143,7 @@ app.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "localizacao_atual";
           await sendTextMessage(
             senderNumber,
-            "Por favor, compartilhe a sua localização atual (para capturarmos latitude e longitude):"
+            "Por favor, compartilhe a sua localização atual da residência do aluno (para capturarmos latitude e longitude):"
           );
           break;
 
@@ -164,7 +159,7 @@ app.post("/webhook", async (req, res) => {
           } else {
             await sendTextMessage(
               senderNumber,
-              "Você não enviou uma localização válida. Por favor, compartilhe sua localização atual."
+              "Você não enviou uma localização válida. Por favor, compartilhe sua localização atual residência do aluno."
             );
           }
           break;
@@ -197,11 +192,10 @@ app.post("/webhook", async (req, res) => {
                 `Aluno encontrado! Nome: ${alunoData.pessoa_nome}. Ele possui alguma deficiência? Responda "Sim" ou "Não".`
               );
             } else {
-              await sendTextMessage(
+              await endConversation(
                 senderNumber,
-                "ID de matrícula ou CPF do aluno não encontrado. Verifique e tente novamente."
+                "ID de matrícula ou CPF do aluno não encontrado. Encerrando atendimento."
               );
-              delete userState[senderNumber];
             }
           }
           break;
@@ -273,14 +267,13 @@ app.post("/webhook", async (req, res) => {
           userState[senderNumber].observacoes =
             text.toLowerCase() === "nenhuma" ? "" : text;
           await saveRouteRequest(senderNumber);
-          await sendTextMessage(
+          await endConversation(
             senderNumber,
-            "Solicitação de rota enviada com sucesso! Em breve entraremos em contato."
+            "Solicitação de rota enviada com sucesso! Obrigado e até a próxima."
           );
-          delete userState[senderNumber];
           break;
 
-        // Quando pedimos localização durante checkStudentTransport
+        // Pedir localização no checkStudentTransport
         case "enviar_localizacao":
           if (location) {
             userState[senderNumber].latitude = location.latitude;
@@ -300,9 +293,9 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // -----------------------------------------------
-    // LIST_REPLY
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // INTERACTIVE - LIST_REPLY
+    // -------------------------------------------------
     else if (message.interactive && message.interactive.list_reply) {
       const selectedOption = message.interactive.list_reply.id;
       switch (selectedOption) {
@@ -323,11 +316,10 @@ app.post("/webhook", async (req, res) => {
           break;
 
         case "end_service":
-          await sendTextMessage(
+          await endConversation(
             senderNumber,
             "Atendimento encerrado. Precisando de algo, é só chamar!"
           );
-          delete userState[senderNumber];
           break;
 
         default:
@@ -336,9 +328,9 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // -----------------------------------------------
-    // BUTTON_REPLY
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // INTERACTIVE - BUTTON_REPLY
+    // -------------------------------------------------
     else if (message.interactive && message.interactive.button_reply) {
       const buttonResponse = message.interactive.button_reply.id;
       if (buttonResponse === "confirm_yes") {
@@ -365,18 +357,17 @@ app.post("/webhook", async (req, res) => {
           "recuso_termos"
         );
       } else if (buttonResponse === "request_transport_no") {
-        await sendTextMessage(
+        await endConversation(
           senderNumber,
           "Tudo bem! Se precisar de mais ajuda, é só enviar mensagem."
         );
-        delete userState[senderNumber];
       }
       setInactivityTimeout();
     }
 
-    // -----------------------------------------------
+    // -------------------------------------------------
     // awaiting_aluno_id_or_cpf
-    // -----------------------------------------------
+    // -------------------------------------------------
     else if (userState[senderNumber] === "awaiting_aluno_id_or_cpf") {
       const aluno = await findStudentByIdOrCpf(text);
       if (aluno) {
@@ -402,17 +393,17 @@ Transporte Público: ${infoTransporte}
           "confirm_no"
         );
       } else {
-        await sendTextMessage(
+        await endConversation(
           senderNumber,
-          "ID de matrícula ou CPF não encontrado. Verifique e tente novamente."
+          "ID de matrícula ou CPF não encontrado. Atendimento encerrado."
         );
       }
       setInactivityTimeout();
     }
 
-    // -----------------------------------------------
+    // -------------------------------------------------
     // Se não houver estado
-    // -----------------------------------------------
+    // -------------------------------------------------
     else {
       await sendInteractiveListMessage(senderNumber);
       setInactivityTimeout();
@@ -425,7 +416,6 @@ Transporte Público: ${infoTransporte}
 // -----------------------------------------------------
 // FUNÇÕES DE BANCO E LÓGICA
 // -----------------------------------------------------
-
 async function findStudentByIdOrCpf(idOrCpf) {
   try {
     const client = await pool.connect();
@@ -505,23 +495,21 @@ async function saveRouteRequest(senderNumber) {
     ];
     await client.query(insertQuery, values);
     client.release();
-    console.log(
-      "Solicitação de rota salva com sucesso na tabela cocessao_rota!"
-    );
+    console.log("Solicitação de rota salva na tabela cocessao_rota!");
   } catch (error) {
     console.error("Erro ao salvar a solicitação de rota:", error);
   }
 }
 
 // -----------------------------------------------------
-// checkStudentTransport (fluxo do aluno usuário transporte)
+// checkStudentTransport (fluxo de aluno usuário transporte)
 // -----------------------------------------------------
 async function checkStudentTransport(to) {
   const aluno = userState[to] ? userState[to].aluno : null;
   if (!aluno) {
     await sendTextMessage(
       to,
-      "Não encontramos dados do aluno. Por favor, tente novamente."
+      "Não encontramos dados do aluno. Tente novamente."
     );
     return;
   }
@@ -539,19 +527,19 @@ async function checkStudentTransport(to) {
     return;
   }
 
-  // Já é usuário (Municipal, Estadual, etc.)
+  // Já é usuário
   const schoolId = aluno.escola_id;
   if (!schoolId) {
-    await sendTextMessage(
+    await endConversation(
       to,
-      "Não foi possível identificar a escola do aluno."
+      "Não foi possível identificar a escola do aluno. Encerrando."
     );
     return;
   }
 
   const routeIds = await getRoutesBySchool(schoolId);
   if (!routeIds || routeIds.length === 0) {
-    await sendTextMessage(
+    await endConversation(
       to,
       "Não há rotas cadastradas para a escola do aluno. Tente novamente mais tarde."
     );
@@ -560,7 +548,7 @@ async function checkStudentTransport(to) {
 
   const routePoints = await getPointsByRoutes(routeIds);
   if (!routePoints || routePoints.length === 0) {
-    await sendTextMessage(
+    await endConversation(
       to,
       "Não encontramos pontos de parada nessas rotas. Verifique com a secretaria."
     );
@@ -574,42 +562,38 @@ async function checkStudentTransport(to) {
     userState[to].step = "enviar_localizacao";
     await sendTextMessage(
       to,
-      "Não foi possível identificar suas coordenadas. Por favor, envie sua localização atual."
+      "Não foi possível identificar suas coordenadas. Por favor, envie sua localização atual residência do aluno."
     );
     return;
   }
 
-  // Se já temos latitude/longitude, finalizamos a busca
+  // Se já temos latitude/longitude
   await finishCheckStudentTransport(to, routePoints);
 }
 
 // -----------------------------------------------------
-// Função chamada após receber localização
-// para finalizar a busca do ponto mais próximo
+// Recebe localização e finaliza busca do ponto
 // -----------------------------------------------------
 async function finishCheckStudentTransport(to, optionalPoints = null) {
-  // Se routePoints não foi passado, precisamos buscar novamente
-  // pois pode ter sido chamado depois do "enviar_localizacao"
-  let routePoints = optionalPoints;
   const aluno = userState[to] ? userState[to].aluno : null;
   if (!aluno) {
-    await sendTextMessage(
-      to,
-      "Não encontramos dados do aluno. Por favor, tente novamente."
-    );
+    await endConversation(to, "Não encontramos dados do aluno. Encerrando.");
     return;
   }
   if (!aluno.escola_id) {
-    await sendTextMessage(
+    await endConversation(
       to,
-      "Não foi possível identificar a escola do aluno."
+      "Não foi possível identificar a escola do aluno. Encerrando."
     );
     return;
   }
+
+  // Se optionalPoints ainda não foi definido, buscamos
+  let routePoints = optionalPoints;
   if (!routePoints) {
     const routeIds = await getRoutesBySchool(aluno.escola_id);
     if (!routeIds || routeIds.length === 0) {
-      await sendTextMessage(
+      await endConversation(
         to,
         "Não há rotas cadastradas para a escola do aluno. Tente novamente mais tarde."
       );
@@ -617,7 +601,7 @@ async function finishCheckStudentTransport(to, optionalPoints = null) {
     }
     routePoints = await getPointsByRoutes(routeIds);
     if (!routePoints || routePoints.length === 0) {
-      await sendTextMessage(
+      await endConversation(
         to,
         "Não encontramos pontos de parada nessas rotas. Verifique com a secretaria."
       );
@@ -628,9 +612,9 @@ async function finishCheckStudentTransport(to, optionalPoints = null) {
   const lat = userState[to].latitude;
   const lng = userState[to].longitude;
   if (!lat || !lng) {
-    await sendTextMessage(
+    await endConversation(
       to,
-      "Não foi possível identificar suas coordenadas. Tente novamente mais tarde."
+      "Não foi possível identificar suas coordenadas. Encerrando."
     );
     return;
   }
@@ -647,27 +631,22 @@ async function finishCheckStudentTransport(to, optionalPoints = null) {
   }
 
   if (!nearestPoint) {
-    await sendTextMessage(
+    await endConversation(
       to,
-      "Não foi possível encontrar um ponto de parada próximo. Verifique com a secretaria."
+      "Não foi possível encontrar um ponto de parada próximo. Tente novamente mais tarde."
     );
   } else {
     const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${lat},${lng}&destination=${nearestPoint.latitude},${nearestPoint.longitude}&travelmode=walking`;
-
     await sendTextMessage(
       to,
-      `Ponto de parada mais próximo vinculado à rota da escola: *${nearestPoint.nome_ponto}*.\nCoordenadas: ${nearestPoint.latitude}, ${nearestPoint.longitude}.\n[Dica de Rota no Google Maps](${directionsUrl})`
+      `Ponto de parada mais próximo vinculado à rota da escola: *${nearestPoint.nome_ponto}*.\nCoordenadas: ${nearestPoint.latitude}, ${nearestPoint.longitude}.\n[Rota no Google Maps](${directionsUrl})`
     );
+    await endConversation(to, "Esperamos ter ajudado! Atendimento encerrado.");
   }
-
-  // Depois de enviar, podemos encerrar ou retornar ao menu principal
-  // delete userState[to]; // Se quiser encerrar fluxo
-  // Ou:
-  // userState[to] = "awaiting_aluno_id_or_cpf"; // Se quiser voltar
 }
 
 // -----------------------------------------------------
-// Funções auxiliares para buscar rotas/pontos no BD
+// Auxiliares para rotas e pontos
 // -----------------------------------------------------
 async function getRoutesBySchool(escolaId) {
   try {
@@ -698,7 +677,7 @@ async function getPointsByRoutes(routeIds) {
     `;
     const result = await client.query(query, [routeIds]);
     client.release();
-    return result.rows; // Array de pontos
+    return result.rows;
   } catch (error) {
     console.error("Erro ao buscar pontos das rotas:", error);
     return [];
@@ -718,40 +697,12 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
-
 function toRad(value) {
   return (value * Math.PI) / 180;
 }
 
 // -----------------------------------------------------
-// Consultar coordenadas via Google Maps
-// -----------------------------------------------------
-async function getCoordinatesFromAddress(address) {
-  try {
-    if (!address) return null;
-    const response = await axios.get(
-      "https://maps.googleapis.com/maps/api/geocode/json",
-      {
-        params: {
-          address,
-          key: GOOGLE_MAPS_API_KEY,
-        },
-      }
-    );
-    if (response.data.status === "OK") {
-      const loc = response.data.results[0].geometry.location;
-      return { lat: loc.lat, lng: loc.lng };
-    }
-    console.error("Erro no geocode (status):", response.data.status);
-    return null;
-  } catch (error) {
-    console.error("Erro ao acessar Google Maps API:", error);
-    return null;
-  }
-}
-
-// -----------------------------------------------------
-// Verificar se localização está em zoneamento
+// Verificar zoneamento
 // -----------------------------------------------------
 async function checkIfInsideAnyZone(latitude, longitude) {
   try {
@@ -772,6 +723,21 @@ async function checkIfInsideAnyZone(latitude, longitude) {
   } catch (error) {
     console.error("Erro ao verificar zoneamento:", error);
     return false;
+  }
+}
+
+// -----------------------------------------------------
+// Encerrar conversa com mensagem de despedida
+// -----------------------------------------------------
+async function endConversation(
+  senderNumber,
+  farewellMsg = "Atendimento encerrado."
+) {
+  await sendTextMessage(senderNumber, farewellMsg);
+  delete userState[senderNumber];
+  if (userTimers[senderNumber]) {
+    clearTimeout(userTimers[senderNumber]);
+    delete userTimers[senderNumber];
   }
 }
 
@@ -943,7 +909,7 @@ async function sendTextMessage(to, text) {
     );
   } catch (error) {
     console.error(
-      "Erro ao enviar mensagem de texto:",
+      "Erro ao enviar texto:",
       error?.response?.data || error.message
     );
   }
@@ -971,17 +937,11 @@ async function sendInteractiveMessageWithButtons(
         buttons: [
           {
             type: "reply",
-            reply: {
-              id: button1Id,
-              title: button1Title,
-            },
+            reply: { id: button1Id, title: button1Title },
           },
           {
             type: "reply",
-            reply: {
-              id: button2Id,
-              title: button2Title,
-            },
+            reply: { id: button2Id, title: button2Title },
           },
         ],
       },
@@ -997,7 +957,7 @@ async function sendInteractiveMessageWithButtons(
     );
   } catch (error) {
     console.error(
-      "Erro ao enviar botões interativos:",
+      "Erro ao enviar botões:",
       error?.response?.data || error.message
     );
   }
