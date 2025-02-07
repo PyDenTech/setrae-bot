@@ -73,7 +73,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(400);
     }
 
-    // Reseta timer de inatividade (10min)
+    // Reseta ou define o timer de inatividade
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
@@ -84,9 +84,7 @@ app.post("/webhook", async (req, res) => {
       }, TIMEOUT_DURATION);
     };
 
-    // -----------------------------------------------
-    // Se existe um fluxo em andamento (userState)
-    // -----------------------------------------------
+    // Fluxo caso exista userState[senderNumber] em andamento
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
         case "termos_uso":
@@ -241,31 +239,24 @@ app.post("/webhook", async (req, res) => {
           userState[senderNumber].celular_responsavel = text;
           userState[senderNumber].step = "zoneamento";
 
-          // Verifica zoneamento e também se está atrelado à escola
           {
             const zoneInfo = await getZoneInfo(
               userState[senderNumber].latitude,
               userState[senderNumber].longitude
             );
-
-            // zoneInfo será { zoneId: <numero ou null>, inZone: <true/false> }
-            // Se inZone for false, zoneId é null ou indefinido
-            // Caso seja true, zoneId é o ID da zona
-            userState[senderNumber].zoneamento = zoneInfo.inZone;
+            userState[senderNumber].zoneamento = false;
 
             if (zoneInfo.inZone) {
+              userState[senderNumber].zoneamento = true;
               await sendTextMessage(
                 senderNumber,
                 "Localização dentro de um zoneamento cadastrado."
               );
-
-              // Verifica se a escola do aluno também está associada a esse zoneId
               const escolaID = userState[senderNumber].escola_id;
               const zoneSchoolRelation = await checkZoneSchool(
                 escolaID,
                 zoneInfo.zoneId
               );
-
               if (zoneSchoolRelation) {
                 await sendTextMessage(
                   senderNumber,
@@ -274,16 +265,19 @@ app.post("/webhook", async (req, res) => {
               } else {
                 await sendTextMessage(
                   senderNumber,
-                  "Esse zoneamento não está diretamente vinculado à escola do aluno. Mas vamos prosseguir."
+                  "Esse zoneamento não está diretamente vinculado à escola do aluno. Prosseguiremos com a solicitação."
                 );
+                userState[senderNumber].zoneamento = false;
               }
             } else {
               await sendTextMessage(
                 senderNumber,
                 "Localização fora dos zoneamentos conhecidos. Vamos prosseguir."
               );
+              userState[senderNumber].zoneamento = false;
             }
           }
+
           userState[senderNumber].step = "observacoes";
           await sendTextMessage(
             senderNumber,
@@ -295,14 +289,12 @@ app.post("/webhook", async (req, res) => {
           userState[senderNumber].observacoes =
             text.toLowerCase() === "nenhuma" ? "" : text;
           await saveRouteRequest(senderNumber);
-
           await endConversation(
             senderNumber,
             "Solicitação de rota enviada com sucesso! Se precisar de mais ajuda futuramente, estamos à disposição. Conversa encerrada."
           );
           break;
 
-        // Se pedimos localização no checkStudentTransport
         case "enviar_localizacao":
           if (location) {
             userState[senderNumber].latitude = location.latitude;
@@ -322,9 +314,7 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // -------------------------------------------------
-    // INTERACTIVE - LIST_REPLY
-    // -------------------------------------------------
+    // Quando chega uma list_reply
     else if (message.interactive && message.interactive.list_reply) {
       const selectedOption = message.interactive.list_reply.id;
       switch (selectedOption) {
@@ -357,9 +347,7 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // -------------------------------------------------
-    // INTERACTIVE - BUTTON_REPLY
-    // -------------------------------------------------
+    // Quando chega uma button_reply
     else if (message.interactive && message.interactive.button_reply) {
       const buttonResponse = message.interactive.button_reply.id;
       if (buttonResponse === "confirm_yes") {
@@ -394,9 +382,7 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // -------------------------------------------------
-    // awaiting_aluno_id_or_cpf
-    // -------------------------------------------------
+    // Se userState[senderNumber] === "awaiting_aluno_id_or_cpf"
     else if (userState[senderNumber] === "awaiting_aluno_id_or_cpf") {
       const aluno = await findStudentByIdOrCpf(text);
       if (aluno) {
@@ -430,9 +416,7 @@ Transporte Público: ${infoTransporte}
       setInactivityTimeout();
     }
 
-    // -------------------------------------------------
-    // Se não houver state
-    // -------------------------------------------------
+    // Se não houver fluxo/estado
     else {
       await sendInteractiveListMessage(senderNumber);
       setInactivityTimeout();
@@ -443,12 +427,9 @@ Transporte Público: ${infoTransporte}
 });
 
 // -----------------------------------------------------
-// FUNÇÕES DE BANCO E LÓGICA
+// -------------- FUNÇÕES DE BANCO E LÓGICA -------------
 // -----------------------------------------------------
 
-/**
- * Busca o aluno na tabela alunos_ativos por ID de matrícula ou CPF.
- */
 async function findStudentByIdOrCpf(idOrCpf) {
   try {
     const client = await pool.connect();
@@ -469,27 +450,24 @@ async function findStudentByIdOrCpf(idOrCpf) {
   }
 }
 
-/**
- * Salva a solicitação na tabela cocessao_rota.
- */
 async function saveRouteRequest(senderNumber) {
   try {
     const {
       nome_responsavel,
       cpf_responsavel,
+      celular_responsavel,
       cep,
       numero,
       endereco,
       latitude,
       longitude,
       id_matricula_aluno,
+      escola_id,
       deficiencia,
       laudo_deficiencia_path,
-      escola_id,
-      celular_responsavel,
+      comprovante_residencia_path,
       zoneamento,
       observacoes,
-      comprovante_residencia_path,
     } = userState[senderNumber];
 
     const client = await pool.connect();
@@ -537,16 +515,9 @@ async function saveRouteRequest(senderNumber) {
   }
 }
 
-// ---------------------------------------------------------------------
-// Verifica se o ponto (lat, lng) está dentro de algum zoneamento e retorna
-// o ID do zoneamento, caso exista, ou null se não estiver em nenhum.
-// inZone: booleano, zoneId: ID da zona ou null
-// ---------------------------------------------------------------------
 async function getZoneInfo(latitude, longitude) {
   const resultObj = { inZone: false, zoneId: null };
-  if (!latitude || !longitude) {
-    return resultObj;
-  }
+  if (!latitude || !longitude) return resultObj;
   try {
     const client = await pool.connect();
     const query = `
@@ -568,19 +539,14 @@ async function getZoneInfo(latitude, longitude) {
     return resultObj;
   } catch (error) {
     console.error("Erro ao verificar zoneamento:", error);
-    return resultObj; // Retorna como inZone=false, zoneId=null
+    return resultObj;
   }
 }
 
-/**
- * Verifica se a escola (escolaId) está vinculada ao zoneamento (zoneId)
- * na tabela "escolas_zoneamentos" (por exemplo).
- */
 async function checkZoneSchool(escolaId, zoneId) {
   if (!escolaId || !zoneId) return false;
   try {
     const client = await pool.connect();
-    // Ajuste o nome da tabela e colunas conforme seu schema
     const query = `
       SELECT id
       FROM escolas_zoneamentos
@@ -597,9 +563,6 @@ async function checkZoneSchool(escolaId, zoneId) {
   }
 }
 
-// -----------------------------------------------------
-// checkStudentTransport (fluxo de aluno usuário transporte)
-// -----------------------------------------------------
 async function checkStudentTransport(to) {
   const aluno = userState[to] ? userState[to].aluno : null;
   if (!aluno) {
@@ -609,7 +572,6 @@ async function checkStudentTransport(to) {
     );
     return;
   }
-
   if (!aluno.transporte_escolar_poder_publico) {
     await sendInteractiveMessageWithButtons(
       to,
@@ -622,8 +584,6 @@ async function checkStudentTransport(to) {
     );
     return;
   }
-
-  // Já é usuário
   const schoolId = aluno.escola_id;
   if (!schoolId) {
     await endConversation(
@@ -632,7 +592,6 @@ async function checkStudentTransport(to) {
     );
     return;
   }
-
   const routeIds = await getRoutesBySchool(schoolId);
   if (!routeIds || routeIds.length === 0) {
     await endConversation(
@@ -641,7 +600,6 @@ async function checkStudentTransport(to) {
     );
     return;
   }
-
   const routePoints = await getPointsByRoutes(routeIds);
   if (!routePoints || routePoints.length === 0) {
     await endConversation(
@@ -650,10 +608,8 @@ async function checkStudentTransport(to) {
     );
     return;
   }
-
   const lat = userState[to].latitude;
   const lng = userState[to].longitude;
-
   if (!lat || !lng) {
     userState[to].step = "enviar_localizacao";
     await sendTextMessage(
@@ -662,14 +618,9 @@ async function checkStudentTransport(to) {
     );
     return;
   }
-
-  // Se já temos latitude/longitude
   await finishCheckStudentTransport(to, routePoints);
 }
 
-// -----------------------------------------------------
-// Recebe localização e finaliza busca do ponto
-// -----------------------------------------------------
 async function finishCheckStudentTransport(to, optionalPoints = null) {
   const aluno = userState[to] ? userState[to].aluno : null;
   if (!aluno) {
@@ -683,7 +634,6 @@ async function finishCheckStudentTransport(to, optionalPoints = null) {
     );
     return;
   }
-
   let routePoints = optionalPoints;
   if (!routePoints) {
     const routeIds = await getRoutesBySchool(aluno.escola_id);
@@ -703,7 +653,6 @@ async function finishCheckStudentTransport(to, optionalPoints = null) {
       return;
     }
   }
-
   const lat = userState[to].latitude;
   const lng = userState[to].longitude;
   if (!lat || !lng) {
@@ -713,10 +662,8 @@ async function finishCheckStudentTransport(to, optionalPoints = null) {
     );
     return;
   }
-
   let minDistance = Infinity;
   let nearestPoint = null;
-
   for (const p of routePoints) {
     const distance = calculateDistance(lat, lng, p.latitude, p.longitude);
     if (distance < minDistance) {
@@ -724,7 +671,6 @@ async function finishCheckStudentTransport(to, optionalPoints = null) {
       nearestPoint = p;
     }
   }
-
   if (!nearestPoint) {
     await endConversation(
       to,
@@ -740,9 +686,6 @@ async function finishCheckStudentTransport(to, optionalPoints = null) {
   }
 }
 
-// -----------------------------------------------------
-// Auxiliares para rotas e pontos
-// -----------------------------------------------------
 async function getRoutesBySchool(escolaId) {
   try {
     const client = await pool.connect();
@@ -779,11 +722,8 @@ async function getPointsByRoutes(routeIds) {
   }
 }
 
-// -----------------------------------------------------
-// Funções de Geometria
-// -----------------------------------------------------
 function calculateDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371; // Raio da Terra em km
+  const R = 6371;
   const dLat = toRad(lat2 - lat1);
   const dLng = toRad(lng2 - lng1);
   const a =
@@ -792,14 +732,11 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
-
 function toRad(value) {
   return (value * Math.PI) / 180;
 }
 
-// -----------------------------------------------------
-// Encerrar conversa com mensagem de despedida
-// -----------------------------------------------------
+// Encerra a conversa
 async function endConversation(
   senderNumber,
   farewellMsg = "Atendimento encerrado."
@@ -812,33 +749,7 @@ async function endConversation(
   }
 }
 
-// -----------------------------------------------------
-// checkZoneSchool (verifica se a escolaId está atribuída ao zoneId)
-// -----------------------------------------------------
-async function checkZoneSchool(escolaId, zoneId) {
-  if (!escolaId || !zoneId) return false;
-  try {
-    const client = await pool.connect();
-    // Ajustar para a tabela e colunas reais do seu BD
-    const query = `
-      SELECT id
-      FROM escolas_zoneamentos
-      WHERE escola_id = $1
-        AND zoneamento_id = $2
-      LIMIT 1
-    `;
-    const result = await client.query(query, [escolaId, zoneId]);
-    client.release();
-    return result.rows.length > 0;
-  } catch (error) {
-    console.error("Erro ao verificar relação escola_zoneamento:", error);
-    return false;
-  }
-}
-
-// -----------------------------------------------------
-// MENSAGENS INTERATIVAS
-// -----------------------------------------------------
+// Envia lista interativa (menu principal)
 async function sendInteractiveListMessage(to) {
   const listMessage = {
     messaging_product: "whatsapp",
@@ -915,6 +826,7 @@ async function sendInteractiveListMessage(to) {
   }
 }
 
+// Envia submenu de Servidores SEMED
 async function sendSemedServersMenu(to) {
   const submenuMessage = {
     messaging_product: "whatsapp",
@@ -923,16 +835,9 @@ async function sendSemedServersMenu(to) {
     type: "interactive",
     interactive: {
       type: "list",
-      header: {
-        type: "text",
-        text: "👩‍🏫 Servidores SEMED",
-      },
-      body: {
-        text: "Selecione a opção desejada:",
-      },
-      footer: {
-        text: "Como podemos ajudar?",
-      },
+      header: { type: "text", text: "👩‍🏫 Servidores SEMED" },
+      body: { text: "Selecione a opção desejada:" },
+      footer: { text: "Como podemos ajudar?" },
       action: {
         button: "Ver Opções",
         sections: [
@@ -986,6 +891,7 @@ async function sendSemedServersMenu(to) {
   }
 }
 
+// Envia texto simples
 async function sendTextMessage(to, text) {
   const message = {
     messaging_product: "whatsapp",
@@ -1010,6 +916,7 @@ async function sendTextMessage(to, text) {
   }
 }
 
+// Envia botões interativos
 async function sendInteractiveMessageWithButtons(
   to,
   bodyText,
@@ -1058,9 +965,7 @@ async function sendInteractiveMessageWithButtons(
   }
 }
 
-// -----------------------------------------------------
-// Inicializa o servidor
-// -----------------------------------------------------
+// Inicia o servidor
 app.listen(BOT_PORT, () => {
   console.log(`BOT rodando na porta ${BOT_PORT}...`);
 });
