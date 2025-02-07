@@ -16,9 +16,6 @@ const BOT_PORT = process.env.BOT_PORT || 3000;
 
 // -----------------------------------------------------
 // Conexão com o banco de dados (Postgres / PostGIS)
-// (Certifique-se de ter:
-//  ALTER TABLE cocessao_rota ADD COLUMN comprovante_residencia_path TEXT;
-// )
 // -----------------------------------------------------
 const pool = new Pool({
   connectionString: DATABASE_URL,
@@ -47,7 +44,6 @@ app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
     console.log("Webhook verificado com sucesso!");
     return res.status(200).send(challenge);
@@ -78,6 +74,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(400);
     }
 
+    // Timer de inatividade
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
@@ -117,7 +114,10 @@ app.post("/webhook", async (req, res) => {
         case "nome_responsavel":
           userState[senderNumber].nome_responsavel = text;
           userState[senderNumber].step = "cpf_responsavel";
-          await sendTextMessage(senderNumber, "Por favor, insira o CPF do responsável:");
+          await sendTextMessage(
+            senderNumber,
+            "Por favor, insira o CPF do responsável:"
+          );
           break;
 
         case "cpf_responsavel":
@@ -129,13 +129,19 @@ app.post("/webhook", async (req, res) => {
         case "cep":
           userState[senderNumber].cep = text;
           userState[senderNumber].step = "numero";
-          await sendTextMessage(senderNumber, "Por favor, insira o número da residência:");
+          await sendTextMessage(
+            senderNumber,
+            "Por favor, insira o número da residência:"
+          );
           break;
 
         case "numero":
           userState[senderNumber].numero = text;
           userState[senderNumber].step = "endereco";
-          await sendTextMessage(senderNumber, "Por favor, insira o endereço completo:");
+          await sendTextMessage(
+            senderNumber,
+            "Por favor, insira o endereço completo:"
+          );
           break;
 
         case "endereco":
@@ -211,7 +217,10 @@ app.post("/webhook", async (req, res) => {
             userState[senderNumber].deficiencia = false;
             userState[senderNumber].laudo_deficiencia_path = null;
             userState[senderNumber].step = "celular_responsavel";
-            await sendTextMessage(senderNumber, "Agora, informe o telefone do responsável:");
+            await sendTextMessage(
+              senderNumber,
+              "Agora, informe o telefone do responsável:"
+            );
           }
           break;
 
@@ -234,21 +243,23 @@ app.post("/webhook", async (req, res) => {
         case "celular_responsavel":
           userState[senderNumber].celular_responsavel = text;
           userState[senderNumber].step = "zoneamento";
-          const isInsideZone = await checkIfInsideAnyZone(
-            userState[senderNumber].latitude,
-            userState[senderNumber].longitude
-          );
-          userState[senderNumber].zoneamento = isInsideZone;
-          if (isInsideZone) {
-            await sendTextMessage(
-              senderNumber,
-              "Localização dentro de um zoneamento cadastrado."
+          {
+            const isInsideZone = await checkIfInsideAnyZone(
+              userState[senderNumber].latitude,
+              userState[senderNumber].longitude
             );
-          } else {
-            await sendTextMessage(
-              senderNumber,
-              "Localização fora dos zoneamentos conhecidos. Vamos prosseguir."
-            );
+            userState[senderNumber].zoneamento = isInsideZone;
+            if (isInsideZone) {
+              await sendTextMessage(
+                senderNumber,
+                "Localização dentro de um zoneamento cadastrado."
+              );
+            } else {
+              await sendTextMessage(
+                senderNumber,
+                "Localização fora dos zoneamentos conhecidos. Vamos prosseguir."
+              );
+            }
           }
           userState[senderNumber].step = "observacoes";
           await sendTextMessage(
@@ -275,7 +286,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     // -------------------------------------------------
-    // MENSAGENS INTERATIVAS (LIST_REPLY)
+    // LIST_REPLY
     // -------------------------------------------------
     else if (message.interactive && message.interactive.list_reply) {
       const selectedOption = message.interactive.list_reply.id;
@@ -311,7 +322,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     // -------------------------------------------------
-    // MENSAGENS INTERATIVAS (BUTTON_REPLY)
+    // BUTTON_REPLY
     // -------------------------------------------------
     else if (message.interactive && message.interactive.button_reply) {
       const buttonResponse = message.interactive.button_reply.id;
@@ -349,7 +360,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     // -------------------------------------------------
-    // ESTADO "awaiting_aluno_id_or_cpf"
+    // awaiting_aluno_id_or_cpf
     // -------------------------------------------------
     else if (userState[senderNumber] === "awaiting_aluno_id_or_cpf") {
       const aluno = await findStudentByIdOrCpf(text);
@@ -385,7 +396,7 @@ Transporte Público: ${infoTransporte}
     }
 
     // -------------------------------------------------
-    // SE NENHUMA OUTRA CONDIÇÃO
+    // Se não houver estado
     // -------------------------------------------------
     else {
       await sendInteractiveListMessage(senderNumber);
@@ -478,43 +489,30 @@ async function saveRouteRequest(senderNumber) {
     ];
     await client.query(insertQuery, values);
     client.release();
-    console.log("Solicitação de rota salva com sucesso na tabela cocessao_rota!");
+    console.log(
+      "Solicitação de rota salva com sucesso na tabela cocessao_rota!"
+    );
   } catch (error) {
     console.error("Erro ao salvar a solicitação de rota:", error);
   }
 }
 
+// -----------------------------------------------------
+// Novo fluxo para encontrar o ponto mais próximo
+// a partir das rotas que servem a escola do aluno
+// -----------------------------------------------------
 async function checkStudentTransport(to) {
   const aluno = userState[to] ? userState[to].aluno : null;
   if (!aluno) {
-    await sendTextMessage(to, "Não encontramos dados do aluno. Por favor, tente novamente.");
+    await sendTextMessage(
+      to,
+      "Não encontramos dados do aluno. Por favor, tente novamente."
+    );
     return;
   }
-  if (aluno.transporte_escolar_poder_publico) {
-    const coordinates = await getCoordinatesFromAddress(aluno.bairro || aluno.endereco || "");
-    if (coordinates) {
-      const nearestStop = await getNearestStop(coordinates);
-      if (nearestStop) {
-        if (coordinates.lat && coordinates.lng && nearestStop.latitude && nearestStop.longitude) {
-          const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${coordinates.lat},${coordinates.lng}&destination=${nearestStop.latitude},${nearestStop.longitude}&travelmode=walking`;
-          await sendTextMessage(
-            to,
-            `O ponto de parada mais próximo é "${nearestStop.nome_ponto}".\nCoordenadas: ${nearestStop.latitude}, ${nearestStop.longitude}.\n[Traçar Rota no Google Maps](${directionsUrl})`
-          );
-        } else {
-          await sendTextMessage(to, "Não foi possível gerar a rota (coordenadas inválidas).");
-        }
-      } else {
-        await sendTextMessage(to, "Não encontramos um ponto de parada próximo ao endereço cadastrado.");
-      }
-    } else {
-      userState[to].step = "enviar_localizacao";
-      await sendTextMessage(
-        to,
-        "Não foi possível identificar suas coordenadas pelo endereço. Por favor, envie sua localização atual."
-      );
-    }
-  } else {
+
+  // Se transporte_escolar_poder_publico for nulo, não é usuário
+  if (!aluno.transporte_escolar_poder_publico) {
     await sendInteractiveMessageWithButtons(
       to,
       "O aluno não é usuário do transporte público. Deseja solicitar?",
@@ -524,9 +522,173 @@ async function checkStudentTransport(to) {
       "Não",
       "request_transport_no"
     );
+    return;
+  }
+
+  // Se chegou aqui, significa que ele é usuário do transporte (Municipal/Estadual/etc.)
+
+  // Buscamos a rota ou rotas que servem a escola do aluno
+  const schoolId = aluno.escola_id;
+  if (!schoolId) {
+    await sendTextMessage(
+      to,
+      "Não foi possível identificar a escola do aluno."
+    );
+    return;
+  }
+
+  // Passo 1: Encontrar IDs das rotas que atendem essa escola
+  const routeIds = await getRoutesBySchool(schoolId);
+  if (!routeIds || routeIds.length === 0) {
+    await sendTextMessage(
+      to,
+      "Não há rotas cadastradas para a escola do aluno. Tente novamente mais tarde."
+    );
+    return;
+  }
+
+  // Passo 2: Obter pontos associados a essas rotas
+  const routePoints = await getPointsByRoutes(routeIds);
+  if (!routePoints || routePoints.length === 0) {
+    await sendTextMessage(
+      to,
+      "Não encontramos pontos de parada nessas rotas. Verifique com a secretaria."
+    );
+    return;
+  }
+
+  // Passo 3: Calcular o ponto de parada mais próximo da localização do pai
+  // Se a API do BOT já tiver a localização do pai (latitude e longitude), podemos usar
+  // userState[to].latitude / userState[to].longitude
+  // Caso contrário, podemos pedir a localização
+  const lat = userState[to].latitude;
+  const lng = userState[to].longitude;
+  if (!lat || !lng) {
+    userState[to].step = "enviar_localizacao";
+    await sendTextMessage(
+      to,
+      "Não foi possível identificar suas coordenadas. Por favor, envie sua localização atual."
+    );
+    return;
+  }
+
+  let minDistance = Infinity;
+  let nearestPoint = null;
+
+  for (const p of routePoints) {
+    const distance = calculateDistance(lat, lng, p.latitude, p.longitude);
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestPoint = p;
+    }
+  }
+
+  // Passo 4: Enviar o ponto encontrado
+  if (!nearestPoint) {
+    await sendTextMessage(
+      to,
+      "Não foi possível encontrar um ponto de parada próximo. Verifique com a secretaria."
+    );
+  } else {
+    // Criar link do Google Maps
+    const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${lat},${lng}&destination=${nearestPoint.latitude},${nearestPoint.longitude}&travelmode=walking`;
+
+    await sendTextMessage(
+      to,
+      `Ponto de parada mais próximo vinculado à rota da escola: *${nearestPoint.nome_ponto}*.\nCoordenadas: ${nearestPoint.latitude}, ${nearestPoint.longitude}.\n[Dica de Rota no Google Maps](${directionsUrl})`
+    );
   }
 }
 
+// -----------------------------------------------------
+// Funções auxiliares para buscar rotas/pontos no BD
+// -----------------------------------------------------
+async function getRoutesBySchool(escolaId) {
+  try {
+    const client = await pool.connect();
+    const query = `
+      SELECT rota_id
+      FROM rotas_escolas
+      WHERE escola_id = $1
+    `;
+    const result = await client.query(query, [escolaId]);
+    client.release();
+    // Retorna array com IDs das rotas
+    return result.rows.map((row) => row.rota_id);
+  } catch (error) {
+    console.error("Erro ao buscar rotas por escola:", error);
+    return [];
+  }
+}
+
+async function getPointsByRoutes(routeIds) {
+  try {
+    if (!routeIds || routeIds.length === 0) return [];
+    const client = await pool.connect();
+    const query = `
+      SELECT p.*
+      FROM rotas_pontos rp
+      JOIN pontos p ON p.id = rp.ponto_id
+      WHERE rp.rota_id = ANY($1)
+    `;
+    const result = await client.query(query, [routeIds]);
+    client.release();
+    // Retorna array de pontos
+    return result.rows;
+  } catch (error) {
+    console.error("Erro ao buscar pontos das rotas:", error);
+    return [];
+  }
+}
+
+// -----------------------------------------------------
+// Funções de Geometria
+// -----------------------------------------------------
+function calculateDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371; // Raio da Terra em km
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function toRad(value) {
+  return (value * Math.PI) / 180;
+}
+
+// -----------------------------------------------------
+// Consultar coordenadas via Google Maps
+// -----------------------------------------------------
+async function getCoordinatesFromAddress(address) {
+  try {
+    if (!address) return null;
+    const response = await axios.get(
+      "https://maps.googleapis.com/maps/api/geocode/json",
+      {
+        params: {
+          address,
+          key: GOOGLE_MAPS_API_KEY,
+        },
+      }
+    );
+    if (response.data.status === "OK") {
+      const loc = response.data.results[0].geometry.location;
+      return { lat: loc.lat, lng: loc.lng };
+    }
+    console.error("Erro no geocode (status):", response.data.status);
+    return null;
+  } catch (error) {
+    console.error("Erro ao acessar Google Maps API:", error);
+    return null;
+  }
+}
+
+// -----------------------------------------------------
+// Verificar se localização está em zoneamento
+// -----------------------------------------------------
 async function checkIfInsideAnyZone(latitude, longitude) {
   try {
     if (!latitude || !longitude) return false;
@@ -549,70 +711,8 @@ async function checkIfInsideAnyZone(latitude, longitude) {
   }
 }
 
-async function getCoordinatesFromAddress(address) {
-  try {
-    if (!address) return null;
-    const response = await axios.get("https://maps.googleapis.com/maps/api/geocode/json", {
-      params: {
-        address,
-        key: GOOGLE_MAPS_API_KEY,
-      },
-    });
-    if (response.data.status === "OK") {
-      const loc = response.data.results[0].geometry.location;
-      return { lat: loc.lat, lng: loc.lng };
-    }
-    console.error("Erro no geocode (status):", response.data.status);
-    return null;
-  } catch (error) {
-    console.error("Erro ao acessar Google Maps API:", error);
-    return null;
-  }
-}
-
-async function getNearestStop({ lat, lng }) {
-  try {
-    const client = await pool.connect();
-    const result = await client.query("SELECT * FROM pontos");
-    client.release();
-    if (result.rows.length === 0) return null;
-
-    let nearestStop = null;
-    let minDistance = Infinity;
-    for (const stop of result.rows) {
-      const stopLat = parseFloat(stop.latitude);
-      const stopLng = parseFloat(stop.longitude);
-      if (isNaN(stopLat) || isNaN(stopLng)) continue;
-      const distance = calculateDistance(lat, lng, stopLat, stopLng);
-      if (distance < minDistance) {
-        minDistance = distance;
-        nearestStop = stop;
-      }
-    }
-    return nearestStop;
-  } catch (error) {
-    console.error("Erro ao consultar pontos:", error);
-    return null;
-  }
-}
-
-function calculateDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-function toRad(value) {
-  return (value * Math.PI) / 180;
-}
-
 // -----------------------------------------------------
-// FUNÇÕES DE MENSAGEM INTERATIVA
+// MENSAGENS INTERATIVAS
 // -----------------------------------------------------
 async function sendInteractiveListMessage(to) {
   const listMessage = {
@@ -675,11 +775,18 @@ async function sendInteractiveListMessage(to) {
     },
   };
   try {
-    await axios.post(`${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`, listMessage, {
-      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
-    });
+    await axios.post(
+      `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
+      listMessage,
+      {
+        headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+      }
+    );
   } catch (error) {
-    console.error("Erro ao enviar menu principal:", error?.response?.data || error.message);
+    console.error(
+      "Erro ao enviar menu principal:",
+      error?.response?.data || error.message
+    );
   }
 }
 
@@ -691,16 +798,9 @@ async function sendSemedServersMenu(to) {
     type: "interactive",
     interactive: {
       type: "list",
-      header: {
-        type: "text",
-        text: "👩‍🏫 Servidores SEMED",
-      },
-      body: {
-        text: "Selecione a opção desejada:",
-      },
-      footer: {
-        text: "Como podemos ajudar?",
-      },
+      header: { type: "text", text: "👩‍🏫 Servidores SEMED" },
+      body: { text: "Selecione a opção desejada:" },
+      footer: { text: "Como podemos ajudar?" },
       action: {
         button: "Ver Opções",
         sections: [
@@ -739,11 +839,18 @@ async function sendSemedServersMenu(to) {
     },
   };
   try {
-    await axios.post(`${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`, submenuMessage, {
-      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
-    });
+    await axios.post(
+      `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
+      submenuMessage,
+      {
+        headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+      }
+    );
   } catch (error) {
-    console.error("Erro ao enviar submenu SEMED:", error?.response?.data || error.message);
+    console.error(
+      "Erro ao enviar submenu SEMED:",
+      error?.response?.data || error.message
+    );
   }
 }
 
@@ -756,11 +863,18 @@ async function sendTextMessage(to, text) {
     text: { body: text },
   };
   try {
-    await axios.post(`${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`, message, {
-      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
-    });
+    await axios.post(
+      `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
+      message,
+      {
+        headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+      }
+    );
   } catch (error) {
-    console.error("Erro ao enviar mensagem de texto:", error?.response?.data || error.message);
+    console.error(
+      "Erro ao enviar mensagem de texto:",
+      error?.response?.data || error.message
+    );
   }
 }
 
@@ -797,11 +911,18 @@ async function sendInteractiveMessageWithButtons(
     },
   };
   try {
-    await axios.post(`${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`, buttonMessage, {
-      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
-    });
+    await axios.post(
+      `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
+      buttonMessage,
+      {
+        headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+      }
+    );
   } catch (error) {
-    console.error("Erro ao enviar botões interativos:", error?.response?.data || error.message);
+    console.error(
+      "Erro ao enviar botões interativos:",
+      error?.response?.data || error.message
+    );
   }
 }
 
