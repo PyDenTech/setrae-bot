@@ -30,6 +30,12 @@ let userTimers = {};
 const TIMEOUT_DURATION = 10 * 60 * 1000; // 10 minutos
 
 // -----------------------------------------------------
+// Contato para notificação
+// (Ex.: Responsável pelos motoristas / operador)
+// -----------------------------------------------------
+const OPERATOR_NUMBER = "5594992204653"; // sem o "+" e sem espaços
+
+// -----------------------------------------------------
 // Servidor Express
 // -----------------------------------------------------
 const app = express();
@@ -73,6 +79,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(400);
     }
 
+    // Reseta ou define o timer de inatividade
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
@@ -414,7 +421,6 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
-        // Se cair em default
         default:
           await sendInteractiveListMessage(senderNumber);
       }
@@ -633,11 +639,84 @@ async function saveRouteRequest(senderNumber) {
     await client.query(insertQuery, values);
     client.release();
     console.log("Solicitação de rota salva na tabela cocessao_rota!");
+
+    // Notificar operador
+    const notifyMsg = `Nova solicitação de ROTA! 
+Responsável: ${nome_responsavel}
+CPF: ${cpf_responsavel}
+Endereço: ${endereco}, CEP: ${cep} 
+(entre outros detalhes)`;
+    await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
   } catch (error) {
     console.error("Erro ao salvar a solicitação de rota:", error);
   }
 }
 
+async function saveDriverRequest(senderNumber) {
+  try {
+    const {
+      driver_name,
+      driver_setor,
+      driver_qtd,
+      driver_destino,
+      driver_lat_origem,
+      driver_lng_origem,
+      driver_has_carga,
+      driver_car_needed,
+      driver_hora_necessidade,
+      driver_observacoes,
+    } = userState[senderNumber];
+
+    const client = await pool.connect();
+    const insertQuery = `
+      INSERT INTO solicitacao_carros_administrativos (
+        nome_requerente,
+        setor_requerente,
+        qtd_pessoas,
+        destino,
+        lat_origem,
+        lng_origem,
+        has_carga,
+        tipo_carro_necessario,
+        hora_necessidade,
+        observacoes
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `;
+    const values = [
+      driver_name,
+      driver_setor,
+      driver_qtd,
+      driver_destino,
+      driver_lat_origem,
+      driver_lng_origem,
+      driver_has_carga,
+      driver_car_needed,
+      driver_hora_necessidade,
+      driver_observacoes || null,
+    ];
+    await client.query(insertQuery, values);
+    client.release();
+    console.log(
+      "Solicitação de motorista salva na tabela solicitacao_carros_administrativos!"
+    );
+
+    // Notificar operador
+    const notifyMsg = `Nova solicitação de MOTORISTA!
+Requerente: ${driver_name}
+Setor: ${driver_setor}
+Destino: ${driver_destino}
+Horário: ${driver_hora_necessidade}
+(entre outros detalhes)`;
+    await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
+  } catch (error) {
+    console.error("Erro ao salvar a solicitação de motorista:", error);
+  }
+}
+
+// -----------------------------------------------------
+// Funções auxiliares para zoneamento / rotas
+// -----------------------------------------------------
 async function getZoneInfo(latitude, longitude) {
   const resultObj = { inZone: false, zoneId: null };
   if (!latitude || !longitude) return resultObj;
@@ -910,6 +989,15 @@ async function saveDriverRequest(senderNumber) {
     console.log(
       "Solicitação de motorista salva na tabela solicitacao_carros_administrativos!"
     );
+
+    // Notificar operador
+    const notifyMsg = `Nova solicitação de MOTORISTA!
+Requerente: ${driver_name}
+Setor: ${driver_setor}
+Destino: ${driver_destino}
+Horário: ${driver_hora_necessidade}
+(entre outros detalhes)`;
+    await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
   } catch (error) {
     console.error("Erro ao salvar a solicitação de motorista:", error);
   }
