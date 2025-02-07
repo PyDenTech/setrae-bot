@@ -703,13 +703,13 @@ async function saveDriverRequest(senderNumber) {
       : "Não (qualquer carro)";
     const notifyMsg = `🚨 *NOVA SOLICITAÇÃO DE MOTORISTA!* 🚨
 
-**Requerente:** ${driver_name}
-**Setor:** ${driver_setor}
-**Quantidade de pessoas:** ${driver_qtd}
-**Destino:** ${driver_destino}
-**Horário:** ${driver_hora_necessidade}
-**Carga Especial:** ${cargoStr}
-**Observações:** ${driver_observacoes || "Nenhuma"}
+*Requerente:* ${driver_name}
+*Setor:* ${driver_setor}
+*Quantidade de pessoas:* ${driver_qtd}
+*Destino:* ${driver_destino}
+*Horário:* ${driver_hora_necessidade}
+*Carga Especial:* ${cargoStr}
+**Observações:* ${driver_observacoes || "Nenhuma"}
 
 Por favor, verifique e providencie um motorista.`;
 
