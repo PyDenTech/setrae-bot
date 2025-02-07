@@ -16,6 +16,8 @@ const BOT_PORT = process.env.BOT_PORT || 3000;
 
 // -----------------------------------------------------
 // Conexão com o banco de dados (Postgres / PostGIS)
+// (Inclua no banco: ALTER TABLE cocessao_rota
+//  ADD COLUMN comprovante_residencia_path TEXT;)
 // -----------------------------------------------------
 const pool = new Pool({
   connectionString: DATABASE_URL,
@@ -58,7 +60,6 @@ app.get("/webhook", (req, res) => {
 app.post("/webhook", async (req, res) => {
   const data = req.body;
 
-  // Verifica se é um evento válido do WhatsApp
   if (
     data.object &&
     data.entry &&
@@ -76,12 +77,8 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(400);
     }
 
-    // Se há timer ativo, limpa e reinicia (o usuário respondeu)
-    if (userTimers[senderNumber]) {
-      clearTimeout(userTimers[senderNumber]);
-    }
-
-    // Função para encerrar a conversa após 10 minutos de inatividade
+    // Reinicia ou cria timer de inatividade
+    if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
         await sendTextMessage(
@@ -93,16 +90,34 @@ app.post("/webhook", async (req, res) => {
       }, TIMEOUT_DURATION);
     };
 
-    // Se o usuário está em algum passo específico do fluxo:
+    // -----------------------------------------------
+    // Fluxo de estados do usuário
+    // -----------------------------------------------
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
+        case "termos_uso":
+          if (message.interactive && message.interactive.button_reply) {
+            const resp = message.interactive.button_reply.id;
+            if (resp === "aceito_termos") {
+              userState[senderNumber].step = "nome_responsavel";
+              await sendTextMessage(
+                senderNumber,
+                "Ótimo! Por favor, insira o nome completo do responsável pela solicitação:"
+              );
+            } else {
+              await sendTextMessage(
+                senderNumber,
+                "Você não concordou com os termos. Atendimento encerrado."
+              );
+              delete userState[senderNumber];
+            }
+          }
+          break;
+
         case "nome_responsavel":
           userState[senderNumber].nome_responsavel = text;
           userState[senderNumber].step = "cpf_responsavel";
-          await sendTextMessage(
-            senderNumber,
-            "Por favor, insira o CPF do responsável:"
-          );
+          await sendTextMessage(senderNumber, "Por favor, insira o CPF do responsável:");
           break;
 
         case "cpf_responsavel":
@@ -114,19 +129,13 @@ app.post("/webhook", async (req, res) => {
         case "cep":
           userState[senderNumber].cep = text;
           userState[senderNumber].step = "numero";
-          await sendTextMessage(
-            senderNumber,
-            "Por favor, insira o número da residência:"
-          );
+          await sendTextMessage(senderNumber, "Por favor, insira o número da residência:");
           break;
 
         case "numero":
           userState[senderNumber].numero = text;
           userState[senderNumber].step = "endereco";
-          await sendTextMessage(
-            senderNumber,
-            "Por favor, insira o endereço completo:"
-          );
+          await sendTextMessage(senderNumber, "Por favor, insira o endereço completo:");
           break;
 
         case "endereco":
@@ -142,15 +151,31 @@ app.post("/webhook", async (req, res) => {
           if (location) {
             userState[senderNumber].latitude = location.latitude;
             userState[senderNumber].longitude = location.longitude;
-            userState[senderNumber].step = "id_matricula_aluno";
+            userState[senderNumber].step = "comprovante_residencia";
             await sendTextMessage(
               senderNumber,
-              "Por favor, insira o ID de matrícula ou CPF do aluno (apenas números):"
+              "Agora, envie uma foto ou PDF do seu comprovante de residência:"
             );
           } else {
             await sendTextMessage(
               senderNumber,
               "Você não enviou uma localização válida. Por favor, compartilhe sua localização atual."
+            );
+          }
+          break;
+
+        case "comprovante_residencia":
+          if (media) {
+            userState[senderNumber].comprovante_residencia_path = media.id;
+            userState[senderNumber].step = "id_matricula_aluno";
+            await sendTextMessage(
+              senderNumber,
+              "Comprovante recebido! Por favor, insira o ID de matrícula ou CPF do aluno (somente números):"
+            );
+          } else {
+            await sendTextMessage(
+              senderNumber,
+              "Por favor, envie um documento ou imagem válido do comprovante de residência."
             );
           }
           break;
@@ -252,11 +277,12 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // Se for interativo (list_reply):
+    // -----------------------------------------------
+    // Se for interativo do tipo list_reply
+    // -----------------------------------------------
     else if (message.interactive && message.interactive.list_reply) {
       const selectedOption = message.interactive.list_reply.id;
       switch (selectedOption) {
-        // Opção 1 no Menu Principal -> Pais e Alunos
         case "option_1":
           userState[senderNumber] = "awaiting_aluno_id_or_cpf";
           await sendTextMessage(
@@ -264,13 +290,9 @@ app.post("/webhook", async (req, res) => {
             "Por favor, insira o ID de matrícula ou CPF do aluno:"
           );
           break;
-
-        // Opção 2 -> Servidores SEMED
         case "option_2":
           await sendSemedServersMenu(senderNumber);
           break;
-
-        // Se o usuário clicar em algo do submenu SEMED e quiser voltar, encerrar, etc.
         case "back_to_menu":
           await sendInteractiveListMessage(senderNumber);
           break;
@@ -281,18 +303,17 @@ app.post("/webhook", async (req, res) => {
           );
           delete userState[senderNumber];
           break;
-
         default:
-          // Mantemos o mesmo menu se a opção não existir
           await sendInteractiveListMessage(senderNumber);
       }
       setInactivityTimeout();
     }
 
-    // Se for interativo (button_reply):
+    // -----------------------------------------------
+    // Se for interativo do tipo button_reply
+    // -----------------------------------------------
     else if (message.interactive && message.interactive.button_reply) {
       const buttonResponse = message.interactive.button_reply.id;
-      // Confirma dados do aluno (Sim ou Não)
       if (buttonResponse === "confirm_yes") {
         await checkStudentTransport(senderNumber);
       } else if (buttonResponse === "confirm_no") {
@@ -301,13 +322,20 @@ app.post("/webhook", async (req, res) => {
           "Por favor, verifique o ID de matrícula ou CPF e tente novamente."
         );
         userState[senderNumber] = "awaiting_aluno_id_or_cpf";
-      }
-      // Se perguntar se quer solicitar transporte
-      else if (buttonResponse === "request_transport_yes") {
-        userState[senderNumber] = { step: "nome_responsavel" };
+      } else if (buttonResponse === "request_transport_yes") {
+        userState[senderNumber] = { step: "termos_uso" };
         await sendTextMessage(
           senderNumber,
-          "Por favor, insira o nome completo do responsável pela solicitação:"
+          "Para utilizar o transporte escolar, é necessário atender aos critérios de distância mínima, idade mínima e demais normas. Você concorda com estes termos?"
+        );
+        await sendInteractiveMessageWithButtons(
+          senderNumber,
+          "Confirma a aceitação dos termos de uso do transporte?",
+          "",
+          "Sim",
+          "aceito_termos",
+          "Não",
+          "recuso_termos"
         );
       } else if (buttonResponse === "request_transport_no") {
         await sendTextMessage(
@@ -319,9 +347,10 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // Estado para aguardar CPF/ID (após selecionar opção 1 no menu principal)
+    // -----------------------------------------------
+    // Se o estado for "awaiting_aluno_id_or_cpf"
+    // -----------------------------------------------
     else if (userState[senderNumber] === "awaiting_aluno_id_or_cpf") {
-      // Quando o usuário digitar algo aqui, verificamos se existe
       const aluno = await findStudentByIdOrCpf(text);
       if (aluno) {
         userState[senderNumber] = { aluno };
@@ -331,9 +360,7 @@ Nome: ${aluno.pessoa_nome}
 CPF: ${aluno.cpf || "Não informado"}
 Escola: ${aluno.nome_escola || "Não vinculada"}
 Matrícula: ${aluno.id_matricula || "N/A"}
-Transporte Público: ${
-          aluno.transporte_escolar_poder_publico === "SIM" ? "Sim" : "Não"
-        }
+Transporte Público: ${aluno.transporte_escolar_poder_publico === "SIM" ? "Sim" : "Não"}
         `;
         await sendInteractiveMessageWithButtons(
           senderNumber,
@@ -353,25 +380,24 @@ Transporte Público: ${
       setInactivityTimeout();
     }
 
-    // Caso não tenha estado ou não seja interativo, mostra o menu principal
+    // -----------------------------------------------
+    // Se não houver estado ou não for interativo
+    // -----------------------------------------------
     else {
       await sendInteractiveListMessage(senderNumber);
       setInactivityTimeout();
     }
   }
 
-  // Confirma recebimento do Webhook
   res.sendStatus(200);
 });
 
 // -----------------------------------------------------
-//       FUNÇÕES AUXILIARES - BANCO / LÓGICA
+// FUNÇÕES DE BANCO DE DADOS E LÓGICA
 // -----------------------------------------------------
 async function findStudentByIdOrCpf(idOrCpf) {
   try {
     const client = await pool.connect();
-    // Faz o cast do id_matricula ou compara somente se numérico
-    // Aqui convertemos id_matricula para texto e comparamos, OU cpf
     const query = `
       SELECT a.*, e.nome AS nome_escola
       FROM alunos_ativos a
@@ -406,6 +432,7 @@ async function saveRouteRequest(senderNumber) {
       celular_responsavel,
       zoneamento,
       observacoes,
+      comprovante_residencia_path
     } = userState[senderNumber];
 
     const client = await pool.connect();
@@ -422,10 +449,11 @@ async function saveRouteRequest(senderNumber) {
         zoneamento,
         deficiencia,
         laudo_deficiencia_path,
+        comprovante_residencia_path,
         latitude,
         longitude,
         observacoes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     `;
     const values = [
       nome_responsavel,
@@ -439,15 +467,14 @@ async function saveRouteRequest(senderNumber) {
       zoneamento,
       deficiencia,
       laudo_deficiencia_path || null,
+      comprovante_residencia_path || null,
       latitude,
       longitude,
-      observacoes || null,
+      observacoes || null
     ];
     await client.query(insertQuery, values);
     client.release();
-    console.log(
-      "Solicitação de rota salva com sucesso na tabela cocessao_rota!"
-    );
+    console.log("Solicitação de rota salva com sucesso na tabela cocessao_rota!");
   } catch (error) {
     console.error("Erro ao salvar a solicitação de rota:", error);
   }
@@ -456,42 +483,25 @@ async function saveRouteRequest(senderNumber) {
 async function checkStudentTransport(to) {
   const aluno = userState[to] ? userState[to].aluno : null;
   if (!aluno) {
-    await sendTextMessage(
-      to,
-      "Não encontramos dados do aluno. Por favor, tente novamente."
-    );
+    await sendTextMessage(to, "Não encontramos dados do aluno. Por favor, tente novamente.");
     return;
   }
-
   if (aluno.transporte_escolar_poder_publico === "SIM") {
-    const coordinates = await getCoordinatesFromAddress(
-      aluno.bairro || aluno.endereco || ""
-    );
+    const coordinates = await getCoordinatesFromAddress(aluno.bairro || aluno.endereco || "");
     if (coordinates) {
       const nearestStop = await getNearestStop(coordinates);
       if (nearestStop) {
-        if (
-          coordinates.lat &&
-          coordinates.lng &&
-          nearestStop.latitude &&
-          nearestStop.longitude
-        ) {
+        if (coordinates.lat && coordinates.lng && nearestStop.latitude && nearestStop.longitude) {
           const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${coordinates.lat},${coordinates.lng}&destination=${nearestStop.latitude},${nearestStop.longitude}&travelmode=walking`;
           await sendTextMessage(
             to,
             `O ponto de parada mais próximo é "${nearestStop.nome_ponto}".\nCoordenadas: ${nearestStop.latitude}, ${nearestStop.longitude}.\n[Traçar Rota no Google Maps](${directionsUrl})`
           );
         } else {
-          await sendTextMessage(
-            to,
-            "Não foi possível gerar a rota (coordenadas inválidas)."
-          );
+          await sendTextMessage(to, "Não foi possível gerar a rota (coordenadas inválidas).");
         }
       } else {
-        await sendTextMessage(
-          to,
-          "Não encontramos um ponto de parada próximo ao endereço cadastrado."
-        );
+        await sendTextMessage(to, "Não encontramos um ponto de parada próximo ao endereço cadastrado.");
       }
     } else {
       userState[to].step = "enviar_localizacao";
@@ -538,15 +548,12 @@ async function checkIfInsideAnyZone(latitude, longitude) {
 async function getCoordinatesFromAddress(address) {
   try {
     if (!address) return null;
-    const response = await axios.get(
-      "https://maps.googleapis.com/maps/api/geocode/json",
-      {
-        params: {
-          address,
-          key: GOOGLE_MAPS_API_KEY,
-        },
-      }
-    );
+    const response = await axios.get("https://maps.googleapis.com/maps/api/geocode/json", {
+      params: {
+        address,
+        key: GOOGLE_MAPS_API_KEY,
+      },
+    });
     if (response.data.status === "OK") {
       const loc = response.data.results[0].geometry.location;
       return { lat: loc.lat, lng: loc.lng };
@@ -595,12 +602,13 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
+
 function toRad(value) {
   return (value * Math.PI) / 180;
 }
 
 // -----------------------------------------------------
-//       FUNÇÕES AUXILIARES - ENVIO DE MENSAGEM
+// FUNÇÕES AUXILIARES DE ENVIO DE MENSAGEM
 // -----------------------------------------------------
 async function sendInteractiveListMessage(to) {
   const listMessage = {
@@ -614,8 +622,12 @@ async function sendInteractiveListMessage(to) {
         type: "text",
         text: "🚍 Bem-vindo ao Sistema de Autoatendimento!",
       },
-      body: { text: "Selecione uma das opções abaixo para continuar:" },
-      footer: { text: "Atendimento Automatizado" },
+      body: {
+        text: "Selecione uma das opções abaixo para continuar:",
+      },
+      footer: {
+        text: "Atendimento Automatizado",
+      },
       action: {
         button: "Ver Opções",
         sections: [
@@ -659,18 +671,11 @@ async function sendInteractiveListMessage(to) {
     },
   };
   try {
-    await axios.post(
-      `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
-      listMessage,
-      {
-        headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
-      }
-    );
+    await axios.post(`${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`, listMessage, {
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+    });
   } catch (error) {
-    console.error(
-      "Erro ao enviar menu principal:",
-      error?.response?.data || error.message
-    );
+    console.error("Erro ao enviar menu principal:", error?.response?.data || error.message);
   }
 }
 
@@ -723,18 +728,11 @@ async function sendSemedServersMenu(to) {
     },
   };
   try {
-    await axios.post(
-      `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
-      submenuMessage,
-      {
-        headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
-      }
-    );
+    await axios.post(`${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`, submenuMessage, {
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+    });
   } catch (error) {
-    console.error(
-      "Erro ao enviar submenu SEMED:",
-      error?.response?.data || error.message
-    );
+    console.error("Erro ao enviar submenu SEMED:", error?.response?.data || error.message);
   }
 }
 
@@ -747,18 +745,11 @@ async function sendTextMessage(to, text) {
     text: { body: text },
   };
   try {
-    await axios.post(
-      `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
-      message,
-      {
-        headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
-      }
-    );
+    await axios.post(`${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`, message, {
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+    });
   } catch (error) {
-    console.error(
-      "Erro ao enviar mensagem de texto:",
-      error?.response?.data || error.message
-    );
+    console.error("Erro ao enviar mensagem de texto:", error?.response?.data || error.message);
   }
 }
 
@@ -795,18 +786,11 @@ async function sendInteractiveMessageWithButtons(
     },
   };
   try {
-    await axios.post(
-      `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
-      buttonMessage,
-      {
-        headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
-      }
-    );
+    await axios.post(`${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`, buttonMessage, {
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+    });
   } catch (error) {
-    console.error(
-      "Erro ao enviar botões interativos:",
-      error?.response?.data || error.message
-    );
+    console.error("Erro ao enviar botões interativos:", error?.response?.data || error.message);
   }
 }
 
