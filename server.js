@@ -30,10 +30,9 @@ let userTimers = {};
 const TIMEOUT_DURATION = 10 * 60 * 1000; // 10 minutos
 
 // -----------------------------------------------------
-// Contato para notificação
-// (Ex.: Responsável pelos motoristas / operador)
+// Contato para notificação (Operador / Responsável)
 // -----------------------------------------------------
-const OPERATOR_NUMBER = "5594992204653"; // sem o "+" e sem espaços
+const OPERATOR_NUMBER = "5594992204653"; // Ajuste para o número desejado (sem +)
 
 // -----------------------------------------------------
 // Servidor Express
@@ -79,7 +78,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(400);
     }
 
-    // Reseta ou define o timer de inatividade
+    // Zera/define o timer de inatividade
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
@@ -90,13 +89,11 @@ app.post("/webhook", async (req, res) => {
       }, TIMEOUT_DURATION);
     };
 
-    // -----------------------------------------------
-    // Fluxo Geral se já existir userState em andamento
-    // -----------------------------------------------
+    // Se já existir um fluxo em andamento
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
         // -------------------------------------------------
-        // Fluxo de Solicitação de Rota (Pais/Alunos)
+        // FLUXO SOLICITAÇÃO DE ROTA (PAIS/ALUNOS)
         // -------------------------------------------------
         case "termos_uso":
           if (message.interactive && message.interactive.button_reply) {
@@ -318,7 +315,7 @@ app.post("/webhook", async (req, res) => {
           break;
 
         // -------------------------------------------------
-        // Fluxo de Solicitar Motorista (Servidores SEMED)
+        // FLUXO DE SOLICITAR MOTORISTA (SERVIDORES SEMED)
         // -------------------------------------------------
         case "driver_name":
           userState[senderNumber].driver_name = text;
@@ -427,9 +424,7 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // -----------------------------------------------
     // Se for list_reply
-    // -----------------------------------------------
     else if (message.interactive && message.interactive.list_reply) {
       const selectedOption = message.interactive.list_reply.id;
       switch (selectedOption) {
@@ -470,9 +465,7 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // -----------------------------------------------
     // Se for button_reply
-    // -----------------------------------------------
     else if (message.interactive && message.interactive.button_reply) {
       const buttonResponse = message.interactive.button_reply.id;
       if (buttonResponse === "confirm_yes") {
@@ -507,9 +500,7 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // -----------------------------------------------
     // Se userState é "awaiting_aluno_id_or_cpf"
-    // -----------------------------------------------
     else if (userState[senderNumber] === "awaiting_aluno_id_or_cpf") {
       const aluno = await findStudentByIdOrCpf(text);
       if (aluno) {
@@ -543,9 +534,7 @@ Transporte Público: ${infoTransporte}
       setInactivityTimeout();
     }
 
-    // -----------------------------------------------
-    // Se não houver fluxo / state
-    // -----------------------------------------------
+    // Se não houver fluxo
     else {
       await sendInteractiveListMessage(senderNumber);
       setInactivityTimeout();
@@ -558,7 +547,6 @@ Transporte Público: ${infoTransporte}
 // -----------------------------------------------------
 //                 FUNÇÕES DE BANCO
 // -----------------------------------------------------
-
 async function findStudentByIdOrCpf(idOrCpf) {
   try {
     const client = await pool.connect();
@@ -579,6 +567,9 @@ async function findStudentByIdOrCpf(idOrCpf) {
   }
 }
 
+/**
+ * Salva solicitação de rota
+ */
 async function saveRouteRequest(senderNumber) {
   try {
     const {
@@ -640,18 +631,23 @@ async function saveRouteRequest(senderNumber) {
     client.release();
     console.log("Solicitação de rota salva na tabela cocessao_rota!");
 
-    // Notificar operador
-    const notifyMsg = `Nova solicitação de ROTA! 
-Responsável: ${nome_responsavel}
-CPF: ${cpf_responsavel}
-Endereço: ${endereco}, CEP: ${cep} 
-(entre outros detalhes)`;
+    // Notificar operador (exemplo, caso queira notificar)
+    const notifyMsg = `🚌 *Nova solicitação de ROTA!* 🚌
+**Responsável:** ${nome_responsavel}
+**CPF:** ${cpf_responsavel}
+**Endereço:** ${endereco}, CEP: ${cep}
+Observações: ${observacoes || "Nenhuma"} 
+(_Outros detalhes no sistema_)`;
+
     await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
   } catch (error) {
     console.error("Erro ao salvar a solicitação de rota:", error);
   }
 }
 
+/**
+ * Salva solicitação de motorista
+ */
 async function saveDriverRequest(senderNumber) {
   try {
     const {
@@ -701,13 +697,23 @@ async function saveDriverRequest(senderNumber) {
       "Solicitação de motorista salva na tabela solicitacao_carros_administrativos!"
     );
 
-    // Notificar operador
-    const notifyMsg = `Nova solicitação de MOTORISTA!
-Requerente: ${driver_name}
-Setor: ${driver_setor}
-Destino: ${driver_destino}
-Horário: ${driver_hora_necessidade}
-(entre outros detalhes)`;
+    // Mensagem customizada para operador, com emojis e negrito
+    const cargoStr = driver_has_carga
+      ? "Sim (caminhonete necessária)"
+      : "Não (qualquer carro)";
+    const notifyMsg = `🚨 *NOVA SOLICITAÇÃO DE MOTORISTA!* 🚨
+
+**Requerente:** ${driver_name}
+**Setor:** ${driver_setor}
+**Quantidade de pessoas:** ${driver_qtd}
+**Destino:** ${driver_destino}
+**Horário:** ${driver_hora_necessidade}
+**Carga Especial:** ${cargoStr}
+**Observações:** ${driver_observacoes || "Nenhuma"}
+
+Por favor, verifique e providencie um motorista.`;
+
+    // Envia notificação ao operador
     await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
   } catch (error) {
     console.error("Erro ao salvar a solicitação de motorista:", error);
@@ -715,7 +721,7 @@ Horário: ${driver_hora_necessidade}
 }
 
 // -----------------------------------------------------
-// Funções auxiliares para zoneamento / rotas
+// Funções auxiliares (zoneamento/rotas)
 // -----------------------------------------------------
 async function getZoneInfo(latitude, longitude) {
   const resultObj = { inZone: false, zoneId: null };
@@ -888,6 +894,20 @@ async function finishCheckStudentTransport(to, optionalPoints = null) {
   }
 }
 
+function calculateDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+function toRad(value) {
+  return (value * Math.PI) / 180;
+}
+
 async function getRoutesBySchool(escolaId) {
   try {
     const client = await pool.connect();
@@ -921,85 +941,6 @@ async function getPointsByRoutes(routeIds) {
   } catch (error) {
     console.error("Erro ao buscar pontos das rotas:", error);
     return [];
-  }
-}
-
-function calculateDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-function toRad(value) {
-  return (value * Math.PI) / 180;
-}
-
-// -----------------------------------------------------
-// Fluxo para Solicitar Motorista (Servidores SEMED)
-// -----------------------------------------------------
-async function saveDriverRequest(senderNumber) {
-  try {
-    const {
-      driver_name,
-      driver_setor,
-      driver_qtd,
-      driver_destino,
-      driver_lat_origem,
-      driver_lng_origem,
-      driver_has_carga,
-      driver_car_needed,
-      driver_hora_necessidade,
-      driver_observacoes,
-    } = userState[senderNumber];
-
-    const client = await pool.connect();
-    const insertQuery = `
-      INSERT INTO solicitacao_carros_administrativos (
-        nome_requerente,
-        setor_requerente,
-        qtd_pessoas,
-        destino,
-        lat_origem,
-        lng_origem,
-        has_carga,
-        tipo_carro_necessario,
-        hora_necessidade,
-        observacoes
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-    `;
-    const values = [
-      driver_name,
-      driver_setor,
-      driver_qtd,
-      driver_destino,
-      driver_lat_origem,
-      driver_lng_origem,
-      driver_has_carga,
-      driver_car_needed,
-      driver_hora_necessidade,
-      driver_observacoes || null,
-    ];
-    await client.query(insertQuery, values);
-    client.release();
-    console.log(
-      "Solicitação de motorista salva na tabela solicitacao_carros_administrativos!"
-    );
-
-    // Notificar operador
-    const notifyMsg = `Nova solicitação de MOTORISTA!
-Requerente: ${driver_name}
-Setor: ${driver_setor}
-Destino: ${driver_destino}
-Horário: ${driver_hora_necessidade}
-(entre outros detalhes)`;
-    await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
-  } catch (error) {
-    console.error("Erro ao salvar a solicitação de motorista:", error);
   }
 }
 
@@ -1157,7 +1098,9 @@ async function sendSemedServersMenu(to) {
   }
 }
 
-// Envia texto simples
+/**
+ * Envia texto simples via WhatsApp
+ */
 async function sendTextMessage(to, text) {
   const message = {
     messaging_product: "whatsapp",
@@ -1182,7 +1125,9 @@ async function sendTextMessage(to, text) {
   }
 }
 
-// Envia botões interativos
+/**
+ * Envia botões interativos
+ */
 async function sendInteractiveMessageWithButtons(
   to,
   bodyText,
