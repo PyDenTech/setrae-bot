@@ -73,7 +73,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(400);
     }
 
-    // Reseta timer de inatividade
+    // Reseta timer de inatividade (10min)
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
@@ -84,7 +84,9 @@ app.post("/webhook", async (req, res) => {
       }, TIMEOUT_DURATION);
     };
 
-    // Lida com o fluxo principal, usando userState[senderNumber].step
+    // -----------------------------------------------
+    // Se existe um fluxo em andamento (userState)
+    // -----------------------------------------------
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
         case "termos_uso":
@@ -134,7 +136,7 @@ app.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "endereco";
           await sendTextMessage(
             senderNumber,
-            "Por favor, insira o endereço completo:"
+            "Por favor, insira o nome da sua rua e o bairro (Ex: 'Rua X, Bairro Y'):"
           );
           break;
 
@@ -143,7 +145,7 @@ app.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "localizacao_atual";
           await sendTextMessage(
             senderNumber,
-            "Por favor, compartilhe a sua localização atual da residência do aluno (para capturarmos latitude e longitude):"
+            "Por favor, compartilhe a localização atual da residência do aluno (latitude/longitude):"
           );
           break;
 
@@ -159,7 +161,7 @@ app.post("/webhook", async (req, res) => {
           } else {
             await sendTextMessage(
               senderNumber,
-              "Você não enviou uma localização válida. Por favor, compartilhe sua localização atual residência do aluno."
+              "Você não enviou uma localização válida. Por favor, compartilhe sua localização atual novamente."
             );
           }
           break;
@@ -238,17 +240,43 @@ app.post("/webhook", async (req, res) => {
         case "celular_responsavel":
           userState[senderNumber].celular_responsavel = text;
           userState[senderNumber].step = "zoneamento";
+
+          // Verifica zoneamento e também se está atrelado à escola
           {
-            const isInsideZone = await checkIfInsideAnyZone(
+            const zoneInfo = await getZoneInfo(
               userState[senderNumber].latitude,
               userState[senderNumber].longitude
             );
-            userState[senderNumber].zoneamento = isInsideZone;
-            if (isInsideZone) {
+
+            // zoneInfo será { zoneId: <numero ou null>, inZone: <true/false> }
+            // Se inZone for false, zoneId é null ou indefinido
+            // Caso seja true, zoneId é o ID da zona
+            userState[senderNumber].zoneamento = zoneInfo.inZone;
+
+            if (zoneInfo.inZone) {
               await sendTextMessage(
                 senderNumber,
                 "Localização dentro de um zoneamento cadastrado."
               );
+
+              // Verifica se a escola do aluno também está associada a esse zoneId
+              const escolaID = userState[senderNumber].escola_id;
+              const zoneSchoolRelation = await checkZoneSchool(
+                escolaID,
+                zoneInfo.zoneId
+              );
+
+              if (zoneSchoolRelation) {
+                await sendTextMessage(
+                  senderNumber,
+                  "Esse zoneamento está atribuído à mesma escola do aluno."
+                );
+              } else {
+                await sendTextMessage(
+                  senderNumber,
+                  "Esse zoneamento não está diretamente vinculado à escola do aluno. Mas vamos prosseguir."
+                );
+              }
             } else {
               await sendTextMessage(
                 senderNumber,
@@ -267,13 +295,14 @@ app.post("/webhook", async (req, res) => {
           userState[senderNumber].observacoes =
             text.toLowerCase() === "nenhuma" ? "" : text;
           await saveRouteRequest(senderNumber);
+
           await endConversation(
             senderNumber,
-            "Solicitação de rota enviada com sucesso! Obrigado e até a próxima."
+            "Solicitação de rota enviada com sucesso! Se precisar de mais ajuda futuramente, estamos à disposição. Conversa encerrada."
           );
           break;
 
-        // Pedir localização no checkStudentTransport
+        // Se pedimos localização no checkStudentTransport
         case "enviar_localizacao":
           if (location) {
             userState[senderNumber].latitude = location.latitude;
@@ -402,7 +431,7 @@ Transporte Público: ${infoTransporte}
     }
 
     // -------------------------------------------------
-    // Se não houver estado
+    // Se não houver state
     // -------------------------------------------------
     else {
       await sendInteractiveListMessage(senderNumber);
@@ -416,6 +445,10 @@ Transporte Público: ${infoTransporte}
 // -----------------------------------------------------
 // FUNÇÕES DE BANCO E LÓGICA
 // -----------------------------------------------------
+
+/**
+ * Busca o aluno na tabela alunos_ativos por ID de matrícula ou CPF.
+ */
 async function findStudentByIdOrCpf(idOrCpf) {
   try {
     const client = await pool.connect();
@@ -436,6 +469,9 @@ async function findStudentByIdOrCpf(idOrCpf) {
   }
 }
 
+/**
+ * Salva a solicitação na tabela cocessao_rota.
+ */
 async function saveRouteRequest(senderNumber) {
   try {
     const {
@@ -501,6 +537,66 @@ async function saveRouteRequest(senderNumber) {
   }
 }
 
+// ---------------------------------------------------------------------
+// Verifica se o ponto (lat, lng) está dentro de algum zoneamento e retorna
+// o ID do zoneamento, caso exista, ou null se não estiver em nenhum.
+// inZone: booleano, zoneId: ID da zona ou null
+// ---------------------------------------------------------------------
+async function getZoneInfo(latitude, longitude) {
+  const resultObj = { inZone: false, zoneId: null };
+  if (!latitude || !longitude) {
+    return resultObj;
+  }
+  try {
+    const client = await pool.connect();
+    const query = `
+      SELECT id
+      FROM zoneamentos
+      WHERE ST_Contains(
+        geom,
+        ST_SetSRID(ST_Point($1, $2), 4326)
+      )
+      LIMIT 1
+    `;
+    const result = await client.query(query, [longitude, latitude]);
+    client.release();
+
+    if (result.rows.length > 0) {
+      resultObj.inZone = true;
+      resultObj.zoneId = result.rows[0].id;
+    }
+    return resultObj;
+  } catch (error) {
+    console.error("Erro ao verificar zoneamento:", error);
+    return resultObj; // Retorna como inZone=false, zoneId=null
+  }
+}
+
+/**
+ * Verifica se a escola (escolaId) está vinculada ao zoneamento (zoneId)
+ * na tabela "escolas_zoneamentos" (por exemplo).
+ */
+async function checkZoneSchool(escolaId, zoneId) {
+  if (!escolaId || !zoneId) return false;
+  try {
+    const client = await pool.connect();
+    // Ajuste o nome da tabela e colunas conforme seu schema
+    const query = `
+      SELECT id
+      FROM escolas_zoneamentos
+      WHERE escola_id = $1
+        AND zoneamento_id = $2
+      LIMIT 1
+    `;
+    const result = await client.query(query, [escolaId, zoneId]);
+    client.release();
+    return result.rows.length > 0;
+  } catch (error) {
+    console.error("Erro ao verificar relação escola_zoneamento:", error);
+    return false;
+  }
+}
+
 // -----------------------------------------------------
 // checkStudentTransport (fluxo de aluno usuário transporte)
 // -----------------------------------------------------
@@ -562,7 +658,7 @@ async function checkStudentTransport(to) {
     userState[to].step = "enviar_localizacao";
     await sendTextMessage(
       to,
-      "Não foi possível identificar suas coordenadas. Por favor, envie sua localização atual residência do aluno."
+      "Não foi possível identificar suas coordenadas. Por favor, envie sua localização atual da residência do aluno."
     );
     return;
   }
@@ -588,7 +684,6 @@ async function finishCheckStudentTransport(to, optionalPoints = null) {
     return;
   }
 
-  // Se optionalPoints ainda não foi definido, buscamos
   let routePoints = optionalPoints;
   if (!routePoints) {
     const routeIds = await getRoutesBySchool(aluno.escola_id);
@@ -697,33 +792,9 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
+
 function toRad(value) {
   return (value * Math.PI) / 180;
-}
-
-// -----------------------------------------------------
-// Verificar zoneamento
-// -----------------------------------------------------
-async function checkIfInsideAnyZone(latitude, longitude) {
-  try {
-    if (!latitude || !longitude) return false;
-    const client = await pool.connect();
-    const query = `
-      SELECT id
-      FROM zoneamentos
-      WHERE ST_Contains(
-        geom,
-        ST_SetSRID(ST_Point($1, $2), 4326)
-      )
-      LIMIT 1
-    `;
-    const result = await client.query(query, [longitude, latitude]);
-    client.release();
-    return result.rows.length > 0;
-  } catch (error) {
-    console.error("Erro ao verificar zoneamento:", error);
-    return false;
-  }
 }
 
 // -----------------------------------------------------
@@ -738,6 +809,30 @@ async function endConversation(
   if (userTimers[senderNumber]) {
     clearTimeout(userTimers[senderNumber]);
     delete userTimers[senderNumber];
+  }
+}
+
+// -----------------------------------------------------
+// checkZoneSchool (verifica se a escolaId está atribuída ao zoneId)
+// -----------------------------------------------------
+async function checkZoneSchool(escolaId, zoneId) {
+  if (!escolaId || !zoneId) return false;
+  try {
+    const client = await pool.connect();
+    // Ajustar para a tabela e colunas reais do seu BD
+    const query = `
+      SELECT id
+      FROM escolas_zoneamentos
+      WHERE escola_id = $1
+        AND zoneamento_id = $2
+      LIMIT 1
+    `;
+    const result = await client.query(query, [escolaId, zoneId]);
+    client.release();
+    return result.rows.length > 0;
+  } catch (error) {
+    console.error("Erro ao verificar relação escola_zoneamento:", error);
+    return false;
   }
 }
 
