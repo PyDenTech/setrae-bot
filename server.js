@@ -316,7 +316,6 @@ app.post("/webhook", async (req, res) => {
 
         // -------------------------------------------------
         // FLUXO DE SOLICITAR MOTORISTA (SERVIDORES SEMED)
-        // (Removemos a parte de "schedule_driver" como pedido)
         // -------------------------------------------------
         case "driver_name":
           userState[senderNumber].driver_name = text;
@@ -441,8 +440,7 @@ app.post("/webhook", async (req, res) => {
           await sendSemedServersMenu(senderNumber);
           break;
 
-        // Novo submenu: Servidores Escola (7 tópicos)
-        // Substitua "option_3" pelo seu novo submenu:
+        // Submenu: Servidores Escola (agora com 5 opções)
         case "option_3":
           await sendSchoolServersMenu(senderNumber);
           break;
@@ -515,8 +513,7 @@ app.post("/webhook", async (req, res) => {
         const infoTransporte = aluno.transporte_escolar_poder_publico
           ? aluno.transporte_escolar_poder_publico
           : "Não informado (provavelmente não usuário)";
-        const alunoInfo = `
-*Dados do Aluno Encontrado*:
+        const alunoInfo = `*Dados do Aluno Encontrado*:
 Nome: ${aluno.pessoa_nome}
 CPF: ${aluno.cpf || "Não informado"}
 Escola: ${aluno.nome_escola || "Não vinculada"}
@@ -641,8 +638,8 @@ async function saveRouteRequest(senderNumber) {
 **CPF:** ${cpf_responsavel}
 **Endereço:** ${endereco}, CEP: ${cep}
 Observações: ${observacoes || "Nenhuma"} 
-(_Outros detalhes no sistema_)`;
-
+(_Outros detalhes no sistema_);
+`;
     await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
   } catch (error) {
     console.error("Erro ao salvar a solicitação de rota:", error);
@@ -713,7 +710,6 @@ async function saveDriverRequest(senderNumber) {
 *Observações:* ${driver_observacoes || "Nenhuma"}
 
 Por favor, verifique e providencie um motorista.`;
-
     await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
   } catch (error) {
     console.error("Erro ao salvar a solicitação de motorista:", error);
@@ -892,7 +888,7 @@ async function finishCheckStudentTransport(to, optionalPoints = null) {
 }
 
 function calculateDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371;
+  const R = 6371; // Raio da Terra em km
   const dLat = toRad(lat2 - lat1);
   const dLng = toRad(lng2 - lng1);
   const a =
@@ -1092,7 +1088,7 @@ async function sendSemedServersMenu(to) {
 }
 
 // -----------------------------------------------------
-// NOVO SUBMENU: Servidores Escola (7 tópicos)
+// SUBMENU ATUALIZADO: Servidores Escola (5 opções)
 // -----------------------------------------------------
 async function sendSchoolServersMenu(to) {
   const schoolMenu = {
@@ -1104,7 +1100,7 @@ async function sendSchoolServersMenu(to) {
       type: "list",
       header: { type: "text", text: "🏫 Servidores Escola" },
       body: {
-        text: "Selecione uma das 7 opções abaixo para continuar:",
+        text: "Selecione uma das 5 opções abaixo para continuar:",
       },
       footer: {
         text: "Como podemos ajudar?",
@@ -1117,37 +1113,27 @@ async function sendSchoolServersMenu(to) {
             rows: [
               {
                 id: "school_option_1",
-                title: "1️⃣ Opção 1",
-                description: "Descrição da Opção 1",
+                title: "1️⃣ Solicitar Carro",
+                description: "Precisa de um carro para a escola?",
               },
               {
                 id: "school_option_2",
-                title: "2️⃣ Opção 2",
-                description: "Descrição da Opção 2",
+                title: "2️⃣ Enviar Informe",
+                description: "Elogios, Reclamações, Feedback, etc.",
               },
               {
                 id: "school_option_3",
-                title: "3️⃣ Opção 3",
-                description: "Descrição da Opção 3",
+                title: "3️⃣ Ver Status de Rotas",
+                description: "Consulte a situação das rotas ativas.",
               },
               {
                 id: "school_option_4",
-                title: "4️⃣ Opção 4",
-                description: "Descrição da Opção 4",
+                title: "4️⃣ Consultar Agenda de Veículos",
+                description: "Ver disponibilidade e horários.",
               },
               {
                 id: "school_option_5",
-                title: "5️⃣ Opção 5",
-                description: "Descrição da Opção 5",
-              },
-              {
-                id: "school_option_6",
-                title: "6️⃣ Opção 6",
-                description: "Descrição da Opção 6",
-              },
-              {
-                id: "school_option_7",
-                title: "7️⃣ Encerrar",
+                title: "5️⃣ Encerrar",
                 description: "Finalizar o atendimento",
               },
             ],
