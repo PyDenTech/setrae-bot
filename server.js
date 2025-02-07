@@ -421,30 +421,47 @@ app.post('/webhook', async (req, res) => {
 /**
  * Busca aluno no DB (tabela "alunos_ativos") por ID de matrícula ou CPF
  */
+// Recebemos "idOrCpf"
 async function findStudentByIdOrCpf(idOrCpf) {
   try {
     const client = await pool.connect();
-    // Ajuste conforme seus campos em "alunos_ativos"
-    const query = `
-      SELECT a.*,
-             e.nome AS nome_escola
-      FROM alunos_ativos a
-      LEFT JOIN escolas e ON a.escola_id = e.id
-      WHERE a.id_matricula = $1 OR a.cpf = $1
-      LIMIT 1
-    `;
-    const result = await client.query(query, [idOrCpf]);
-    client.release();
 
-    if (result.rows.length > 0) {
-      return result.rows[0];
+    // Se for só dígitos, assumimos que é a coluna id_matricula
+    if (/^\d+$/.test(idOrCpf)) {
+      const query = `
+        SELECT a.*,
+               e.nome AS nome_escola
+        FROM alunos_ativos a
+        LEFT JOIN escolas e ON a.escola_id = e.id
+        WHERE a.id_matricula = $1
+        LIMIT 1
+      `;
+      const result = await client.query(query, [parseInt(idOrCpf, 10)]);
+      client.release();
+      if (result.rows.length > 0) return result.rows[0];
+      return null;
+    } else {
+      // senão, buscar por CPF
+      const query = `
+        SELECT a.*,
+               e.nome AS nome_escola
+        FROM alunos_ativos a
+        LEFT JOIN escolas e ON a.escola_id = e.id
+        WHERE a.cpf = $1
+        LIMIT 1
+      `;
+      const result = await client.query(query, [idOrCpf]);
+      client.release();
+      if (result.rows.length > 0) return result.rows[0];
+      return null;
     }
-    return null;
+
   } catch (error) {
     console.error('Erro ao buscar aluno em alunos_ativos:', error);
     return null;
   }
 }
+
 
 /**
  * Salva a solicitação de rota na tabela "cocessao_rota"
