@@ -73,7 +73,6 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(400);
     }
 
-    // Reseta ou define o timer de inatividade
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
@@ -84,9 +83,15 @@ app.post("/webhook", async (req, res) => {
       }, TIMEOUT_DURATION);
     };
 
-    // Fluxo caso exista userState[senderNumber] em andamento
+    // -------------------------------------------------
+    // FLUXO COM userState[senderNumber]
+    // -------------------------------------------------
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
+        // =====================
+        // Fluxo Pais/Alunos
+        // =====================
+
         case "termos_uso":
           if (message.interactive && message.interactive.button_reply) {
             const resp = message.interactive.button_reply.id;
@@ -295,6 +300,9 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
+        // =========================================
+        // Pedimos localização no checkStudentTransport
+        // =========================================
         case "enviar_localizacao":
           if (location) {
             userState[senderNumber].latitude = location.latitude;
@@ -308,16 +316,69 @@ app.post("/webhook", async (req, res) => {
           }
           break;
 
+        // =========================================
+        // Fluxo "Solicitar Motorista" (Servidores SEMED)
+        // =========================================
+        case "driver_nome_servidor":
+          userState[senderNumber].nome_servidor = text;
+          userState[senderNumber].step = "driver_departamento";
+          await sendTextMessage(
+            senderNumber,
+            "Por favor, informe o seu departamento ou setor (Ex: RH, Financeiro, etc.):"
+          );
+          break;
+
+        case "driver_departamento":
+          userState[senderNumber].departamento = text;
+          userState[senderNumber].step = "driver_data";
+          await sendTextMessage(
+            senderNumber,
+            "Informe a data para a qual deseja solicitar o motorista (Ex: 01/05/2025):"
+          );
+          break;
+
+        case "driver_data":
+          userState[senderNumber].data_solicitacao = text;
+          userState[senderNumber].step = "driver_destino";
+          await sendTextMessage(
+            senderNumber,
+            "Informe o destino (local ou endereço) que pretende ir:"
+          );
+          break;
+
+        case "driver_destino":
+          userState[senderNumber].destino = text;
+          userState[senderNumber].step = "driver_observacoes";
+          await sendTextMessage(
+            senderNumber,
+            'Alguma observação adicional? (responda ou digite "nenhuma")'
+          );
+          break;
+
+        case "driver_observacoes":
+          userState[senderNumber].driver_observacoes =
+            text.toLowerCase() === "nenhuma" ? "" : text;
+          await saveDriverRequest(senderNumber);
+          await endConversation(
+            senderNumber,
+            "Solicitação de motorista cadastrada com sucesso! Em breve entraremos em contato."
+          );
+          break;
+
         default:
           await sendInteractiveListMessage(senderNumber);
       }
       setInactivityTimeout();
     }
 
-    // Quando chega uma list_reply
+    // -------------------------------------------------
+    // Se for list_reply
+    // -------------------------------------------------
     else if (message.interactive && message.interactive.list_reply) {
       const selectedOption = message.interactive.list_reply.id;
+
       switch (selectedOption) {
+        // Pais e Alunos
         case "option_1":
           userState[senderNumber] = "awaiting_aluno_id_or_cpf";
           await sendTextMessage(
@@ -326,12 +387,33 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
+        // Servidores SEMED
         case "option_2":
           await sendSemedServersMenu(senderNumber);
           break;
 
-        case "back_to_menu":
-          await sendInteractiveListMessage(senderNumber);
+        // No submenu SEMED, "request_driver"
+        case "request_driver":
+          userState[senderNumber] = { step: "driver_nome_servidor" };
+          await sendTextMessage(
+            senderNumber,
+            "Para solicitar um motorista, por favor informe seu nome completo:"
+          );
+          break;
+
+        case "schedule_driver":
+          // Fluxo futuro de "Agendar Motorista"
+          await sendTextMessage(
+            senderNumber,
+            "Fluxo de agendamento de motorista em desenvolvimento. Volte em breve."
+          );
+          break;
+
+        case "speak_to_agent":
+          await sendTextMessage(
+            senderNumber,
+            "Conectando você a um atendente... (Exemplo)"
+          );
           break;
 
         case "end_service":
@@ -341,15 +423,22 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
+        case "back_to_menu":
+          await sendInteractiveListMessage(senderNumber);
+          break;
+
         default:
           await sendInteractiveListMessage(senderNumber);
       }
       setInactivityTimeout();
     }
 
-    // Quando chega uma button_reply
+    // -------------------------------------------------
+    // Se for button_reply
+    // -------------------------------------------------
     else if (message.interactive && message.interactive.button_reply) {
       const buttonResponse = message.interactive.button_reply.id;
+
       if (buttonResponse === "confirm_yes") {
         await checkStudentTransport(senderNumber);
       } else if (buttonResponse === "confirm_no") {
@@ -382,7 +471,9 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // Se userState[senderNumber] === "awaiting_aluno_id_or_cpf"
+    // -------------------------------------------------
+    // awaiting_aluno_id_or_cpf
+    // -------------------------------------------------
     else if (userState[senderNumber] === "awaiting_aluno_id_or_cpf") {
       const aluno = await findStudentByIdOrCpf(text);
       if (aluno) {
@@ -416,7 +507,9 @@ Transporte Público: ${infoTransporte}
       setInactivityTimeout();
     }
 
-    // Se não houver fluxo/estado
+    // -------------------------------------------------
+    // Se não houver state
+    // -------------------------------------------------
     else {
       await sendInteractiveListMessage(senderNumber);
       setInactivityTimeout();
@@ -427,9 +520,8 @@ Transporte Público: ${infoTransporte}
 });
 
 // -----------------------------------------------------
-// -------------- FUNÇÕES DE BANCO E LÓGICA -------------
+// FUNÇÕES DE BANCO E LÓGICA - JÁ EXISTENTES
 // -----------------------------------------------------
-
 async function findStudentByIdOrCpf(idOrCpf) {
   try {
     const client = await pool.connect();
@@ -517,7 +609,9 @@ async function saveRouteRequest(senderNumber) {
 
 async function getZoneInfo(latitude, longitude) {
   const resultObj = { inZone: false, zoneId: null };
-  if (!latitude || !longitude) return resultObj;
+  if (!latitude || !longitude) {
+    return resultObj;
+  }
   try {
     const client = await pool.connect();
     const query = `
@@ -732,11 +826,67 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
+
 function toRad(value) {
   return (value * Math.PI) / 180;
 }
 
-// Encerra a conversa
+// -----------------------------------------------------
+// Fluxo de Solicitar Motorista - SEMED
+// -----------------------------------------------------
+async function saveDriverRequest(senderNumber) {
+  try {
+    const {
+      nome_servidor,
+      departamento,
+      data_solicitacao,
+      destino,
+      driver_observacoes,
+    } = userState[senderNumber];
+
+    const client = await pool.connect();
+    // Exemplo: armazenando em "memorandos" ou criando uma tabela "solicitar_motorista"
+    // Aqui fica apenas ilustrativo
+    const insertQuery = `
+      INSERT INTO memorandos (
+        tipo_memorando,
+        data_emissao,
+        assunto,
+        setor_origem,
+        data_transporte,
+        destino_transporte,
+        motivo_diaria,
+        created_at
+      ) VALUES (
+        'SOLICITACAO_MOTORISTA',
+        CURRENT_DATE,
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        NOW()
+      )
+    `;
+    const assuntoGerado = `Servidor: ${nome_servidor} / Dept: ${departamento}`;
+    const valores = [
+      assuntoGerado,
+      departamento,
+      data_solicitacao,
+      destino,
+      driver_observacoes || "",
+    ];
+    await client.query(insertQuery, valores);
+    client.release();
+    console.log("Solicitação de motorista salva com sucesso (memorandos)!");
+  } catch (error) {
+    console.error("Erro ao salvar a solicitação de motorista:", error);
+  }
+}
+
+// -----------------------------------------------------
+// Encerrar conversa
+// -----------------------------------------------------
 async function endConversation(
   senderNumber,
   farewellMsg = "Atendimento encerrado."
@@ -749,7 +899,9 @@ async function endConversation(
   }
 }
 
-// Envia lista interativa (menu principal)
+// -----------------------------------------------------
+// Envia menu principal
+// -----------------------------------------------------
 async function sendInteractiveListMessage(to) {
   const listMessage = {
     messaging_product: "whatsapp",
@@ -826,7 +978,9 @@ async function sendInteractiveListMessage(to) {
   }
 }
 
-// Envia submenu de Servidores SEMED
+// -----------------------------------------------------
+// Submenu SEMED
+// -----------------------------------------------------
 async function sendSemedServersMenu(to) {
   const submenuMessage = {
     messaging_product: "whatsapp",
@@ -891,7 +1045,9 @@ async function sendSemedServersMenu(to) {
   }
 }
 
+// -----------------------------------------------------
 // Envia texto simples
+// -----------------------------------------------------
 async function sendTextMessage(to, text) {
   const message = {
     messaging_product: "whatsapp",
@@ -916,7 +1072,9 @@ async function sendTextMessage(to, text) {
   }
 }
 
-// Envia botões interativos
+// -----------------------------------------------------
+// Botões interativos (Sim/Não, etc.)
+// -----------------------------------------------------
 async function sendInteractiveMessageWithButtons(
   to,
   bodyText,
@@ -965,7 +1123,9 @@ async function sendInteractiveMessageWithButtons(
   }
 }
 
-// Inicia o servidor
+// -----------------------------------------------------
+// Inicializa o servidor
+// -----------------------------------------------------
 app.listen(BOT_PORT, () => {
   console.log(`BOT rodando na porta ${BOT_PORT}...`);
 });
