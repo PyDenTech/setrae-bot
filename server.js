@@ -418,6 +418,124 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
+        // -------------------------------------------------
+        // FLUXO SERVIDORES ESCOLA (5 OPÇÕES)
+        // -------------------------------------------------
+        case "school_car_nome_escola":
+          userState[senderNumber].nome_escola = text;
+          userState[senderNumber].step = "school_car_qtd_passageiros";
+          await sendTextMessage(
+            senderNumber,
+            "Quantos passageiros irão no veículo?"
+          );
+          break;
+
+        case "school_car_qtd_passageiros":
+          userState[senderNumber].qtd_passageiros = text;
+          userState[senderNumber].step = "school_car_descricao_demanda";
+          await sendTextMessage(
+            senderNumber,
+            "Descreva a demanda (motivo da solicitação):"
+          );
+          break;
+
+        case "school_car_descricao_demanda":
+          userState[senderNumber].descricao_demanda = text;
+          userState[senderNumber].step = "school_car_zona_await";
+          await sendInteractiveMessageWithButtons(
+            senderNumber,
+            "É zona urbana ou zona rural?",
+            "",
+            "Urbana",
+            "zona_urbana",
+            "Rural",
+            "zona_rural"
+          );
+          break;
+
+        case "school_car_zona_await":
+          if (message.interactive && message.interactive.button_reply) {
+            const zonaResp = message.interactive.button_reply.id;
+            if (zonaResp === "zona_urbana") {
+              userState[senderNumber].zona = "Urbana";
+            } else {
+              userState[senderNumber].zona = "Rural";
+            }
+            userState[senderNumber].step = "school_car_tempo_est";
+            await sendTextMessage(
+              senderNumber,
+              "Qual o tempo estimado de uso do veículo (ex: 2 horas)?"
+            );
+          }
+          break;
+
+        case "school_car_tempo_est":
+          userState[senderNumber].tempo_est = text;
+          userState[senderNumber].step = "school_car_data";
+          await sendTextMessage(
+            senderNumber,
+            "Informe a data do agendamento (ex: 12/02/2025):"
+          );
+          break;
+
+        case "school_car_data":
+          userState[senderNumber].data_agendamento = text;
+          userState[senderNumber].step = "school_car_hora";
+          await sendTextMessage(senderNumber, "Para qual horário? (ex: 08:00)");
+          break;
+
+        case "school_car_hora":
+          userState[senderNumber].hora_agendamento = text;
+          await saveSchoolCarRequest(senderNumber);
+          await endConversation(
+            senderNumber,
+            "Solicitação de carro registrada com sucesso! Obrigado."
+          );
+          break;
+
+        // FLUXO PARA "ENVIAR INFORME"
+        case "school_informe_tipo":
+          if (message.interactive && message.interactive.button_reply) {
+            userState[senderNumber].informe_tipo =
+              message.interactive.button_reply.id;
+            userState[senderNumber].step = "school_informe_desc";
+            await sendTextMessage(
+              senderNumber,
+              "Por favor, descreva o informe (detalhes, situação, etc.):"
+            );
+          }
+          break;
+
+        case "school_informe_desc":
+          userState[senderNumber].informe_descricao = text;
+          await saveSchoolInforme(senderNumber);
+          await endConversation(
+            senderNumber,
+            "Informe registrado com sucesso! Obrigado."
+          );
+          break;
+
+        // FLUXO PARA "STATUS DE ROTAS"
+        case "school_status_rotas_id":
+          // Aqui você poderia buscar no banco o status da rota
+          // Mas faremos apenas uma resposta ilustrativa
+          await sendTextMessage(
+            senderNumber,
+            `Consultando status da rota ID: ${text}...\n\nExemplo de resposta: "Rota ativa, previsão de chegada às 07:30."`
+          );
+          await endConversation(senderNumber, "Esperamos ter ajudado!");
+          break;
+
+        // FLUXO PARA "AGENDA DE VEÍCULOS"
+        case "school_agenda_veic_data":
+          // Aqui poderia haver lógica de busca em BD
+          await sendTextMessage(
+            senderNumber,
+            `Agenda de veículos para data ${text}:\n- Veículo A: 08:00 - 10:00\n- Veículo B: 10:30 - 12:00\n\n(Exemplo ilustrativo.)`
+          );
+          await endConversation(senderNumber, "Esperamos ter ajudado!");
+          break;
+
         default:
           await sendInteractiveListMessage(senderNumber);
       }
@@ -427,6 +545,7 @@ app.post("/webhook", async (req, res) => {
     // Se for list_reply
     else if (message.interactive && message.interactive.list_reply) {
       const selectedOption = message.interactive.list_reply.id;
+
       switch (selectedOption) {
         case "option_1":
           userState[senderNumber] = "awaiting_aluno_id_or_cpf";
@@ -458,6 +577,57 @@ app.post("/webhook", async (req, res) => {
           break;
 
         case "end_service":
+          await endConversation(
+            senderNumber,
+            "Atendimento encerrado. Precisando de algo, é só chamar!"
+          );
+          break;
+
+        // -------------------------------------------------
+        // DETALHANDO AS 5 OPÇÕES DO SUBMENU ESCOLA
+        // -------------------------------------------------
+        case "school_option_1":
+          userState[senderNumber] = { step: "school_car_nome_escola" };
+          await sendTextMessage(
+            senderNumber,
+            "Para agendar carro, informe o nome da escola:"
+          );
+          break;
+
+        case "school_option_2":
+          // Perguntar tipo de informe: Elogio, Reclamação, Feedback, Geral
+          userState[senderNumber] = { step: "school_informe_tipo" };
+          await sendInteractiveMessageWithButtons(
+            senderNumber,
+            "Selecione o tipo do informe:",
+            "",
+            "Elogio",
+            "elogio",
+            "Reclamação",
+            "reclamacao"
+          );
+          // Obs: Se quiser mais de 2 botões, precisará adaptar (máx 3 no total).
+          break;
+
+        case "school_option_3":
+          // STATUS DE ROTAS
+          userState[senderNumber] = { step: "school_status_rotas_id" };
+          await sendTextMessage(
+            senderNumber,
+            "Informe o ID da rota que deseja consultar:"
+          );
+          break;
+
+        case "school_option_4":
+          // AGENDA DE VEÍCULOS
+          userState[senderNumber] = { step: "school_agenda_veic_data" };
+          await sendTextMessage(
+            senderNumber,
+            "Informe a data que deseja consultar (ex: 15/02/2025):"
+          );
+          break;
+
+        case "school_option_5":
           await endConversation(
             senderNumber,
             "Atendimento encerrado. Precisando de algo, é só chamar!"
@@ -632,7 +802,6 @@ async function saveRouteRequest(senderNumber) {
     client.release();
     console.log("Solicitação de rota salva na tabela cocessao_rota!");
 
-    // Notificar operador
     const notifyMsg = `🚌 *Nova solicitação de ROTA!* 🚌
 **Responsável:** ${nome_responsavel}
 **CPF:** ${cpf_responsavel}
@@ -695,7 +864,6 @@ async function saveDriverRequest(senderNumber) {
       "Solicitação de motorista salva na tabela solicitacao_carros_administrativos!"
     );
 
-    // Mensagem customizada para operador, com emojis e negrito
     const cargoStr = driver_has_carga
       ? "Sim (caminhonete necessária)"
       : "Não (qualquer carro)";
@@ -713,6 +881,100 @@ Por favor, verifique e providencie um motorista.`;
     await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
   } catch (error) {
     console.error("Erro ao salvar a solicitação de motorista:", error);
+  }
+}
+
+// -----------------------------------------------------
+// SALVAR SOLICITAÇÃO DE CARRO (ESCOLA)
+// -----------------------------------------------------
+async function saveSchoolCarRequest(senderNumber) {
+  try {
+    const {
+      nome_escola,
+      qtd_passageiros,
+      descricao_demanda,
+      zona,
+      tempo_est,
+      data_agendamento,
+      hora_agendamento,
+    } = userState[senderNumber];
+
+    const client = await pool.connect();
+    const insertQuery = `
+      INSERT INTO solicitacao_carro_escola (
+        nome_escola,
+        qtd_passageiros,
+        descricao_demanda,
+        zona,
+        tempo_estimado,
+        data_agendamento,
+        hora_agendamento
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `;
+    const values = [
+      nome_escola,
+      qtd_passageiros,
+      descricao_demanda,
+      zona,
+      tempo_est,
+      data_agendamento,
+      hora_agendamento,
+    ];
+    await client.query(insertQuery, values);
+    client.release();
+
+    console.log(
+      "Solicitação de carro (escola) salva na tabela solicitacao_carro_escola!"
+    );
+
+    const notifyMsg = `🚐 *NOVA SOLICITAÇÃO DE CARRO (Escola)* 🚐
+
+*Escola:* ${nome_escola}
+*Passageiros:* ${qtd_passageiros}
+*Demanda:* ${descricao_demanda}
+*Zona:* ${zona}
+*Tempo Estimado:* ${tempo_est}
+*Data:* ${data_agendamento}
+*Hora:* ${hora_agendamento}
+
+Por favor, verifique e providencie um carro.`;
+    await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
+  } catch (error) {
+    console.error("Erro ao salvar solicitação de carro (escola):", error);
+  }
+}
+
+// -----------------------------------------------------
+// SALVAR INFORME (ESCOLA)
+// -----------------------------------------------------
+async function saveSchoolInforme(senderNumber) {
+  try {
+    const { informe_tipo, informe_descricao } = userState[senderNumber];
+
+    const client = await pool.connect();
+    const insertQuery = `
+      INSERT INTO informes_escola (
+        tipo,
+        descricao
+      )
+      VALUES ($1, $2)
+    `;
+    const values = [informe_tipo, informe_descricao];
+    await client.query(insertQuery, values);
+    client.release();
+
+    console.log("Informe da escola salvo em informes_escola!");
+
+    const notifyMsg = `✉️ *NOVO INFORME DA ESCOLA* ✉️
+
+*Tipo:* ${informe_tipo}
+*Descrição:* ${informe_descricao}
+
+Verifique no sistema para mais detalhes.`;
+    await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
+  } catch (error) {
+    console.error("Erro ao salvar informe da escola:", error);
   }
 }
 
