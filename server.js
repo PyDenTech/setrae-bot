@@ -316,6 +316,7 @@ app.post("/webhook", async (req, res) => {
 
         // -------------------------------------------------
         // FLUXO DE SOLICITAR MOTORISTA (SERVIDORES SEMED)
+        // (Removemos a parte de "schedule_driver" como pedido)
         // -------------------------------------------------
         case "driver_name":
           userState[senderNumber].driver_name = text;
@@ -440,6 +441,12 @@ app.post("/webhook", async (req, res) => {
           await sendSemedServersMenu(senderNumber);
           break;
 
+        // Novo submenu: Servidores Escola (7 tópicos)
+        // Substitua "option_3" pelo seu novo submenu:
+        case "option_3":
+          await sendSchoolServersMenu(senderNumber);
+          break;
+
         case "request_driver":
           userState[senderNumber] = { step: "driver_name" };
           await sendTextMessage(
@@ -545,7 +552,7 @@ Transporte Público: ${infoTransporte}
 });
 
 // -----------------------------------------------------
-//                 FUNÇÕES DE BANCO
+//             FUNÇÕES DE BANCO E LÓGICA
 // -----------------------------------------------------
 async function findStudentByIdOrCpf(idOrCpf) {
   try {
@@ -567,9 +574,6 @@ async function findStudentByIdOrCpf(idOrCpf) {
   }
 }
 
-/**
- * Salva solicitação de rota
- */
 async function saveRouteRequest(senderNumber) {
   try {
     const {
@@ -631,7 +635,7 @@ async function saveRouteRequest(senderNumber) {
     client.release();
     console.log("Solicitação de rota salva na tabela cocessao_rota!");
 
-    // Notificar operador (exemplo, caso queira notificar)
+    // Notificar operador
     const notifyMsg = `🚌 *Nova solicitação de ROTA!* 🚌
 **Responsável:** ${nome_responsavel}
 **CPF:** ${cpf_responsavel}
@@ -645,9 +649,6 @@ Observações: ${observacoes || "Nenhuma"}
   }
 }
 
-/**
- * Salva solicitação de motorista
- */
 async function saveDriverRequest(senderNumber) {
   try {
     const {
@@ -709,20 +710,17 @@ async function saveDriverRequest(senderNumber) {
 *Destino:* ${driver_destino}
 *Horário:* ${driver_hora_necessidade}
 *Carga Especial:* ${cargoStr}
-**Observações:* ${driver_observacoes || "Nenhuma"}
+*Observações:* ${driver_observacoes || "Nenhuma"}
 
 Por favor, verifique e providencie um motorista.`;
 
-    // Envia notificação ao operador
     await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
   } catch (error) {
     console.error("Erro ao salvar a solicitação de motorista:", error);
   }
 }
 
-// -----------------------------------------------------
-// Funções auxiliares (zoneamento/rotas)
-// -----------------------------------------------------
+// Funções zoneamento/rotas
 async function getZoneInfo(latitude, longitude) {
   const resultObj = { inZone: false, zoneId: null };
   if (!latitude || !longitude) return resultObj;
@@ -739,7 +737,6 @@ async function getZoneInfo(latitude, longitude) {
     `;
     const result = await client.query(query, [longitude, latitude]);
     client.release();
-
     if (result.rows.length > 0) {
       resultObj.inZone = true;
       resultObj.zoneId = result.rows[0].id;
@@ -1056,24 +1053,20 @@ async function sendSemedServersMenu(to) {
                 title: "1️⃣ Solicitar Motorista",
                 description: "Solicitar transporte",
               },
-              {
-                id: "schedule_driver",
-                title: "2️⃣ Agendar Motorista",
-                description: "Agendar transporte futuro",
-              },
+              // Removemos "schedule_driver" aqui
               {
                 id: "speak_to_agent",
-                title: "3️⃣ Falar com Atendente",
+                title: "2️⃣ Falar com Atendente",
                 description: "Conversar com um atendente",
               },
               {
                 id: "end_service",
-                title: "4️⃣ Encerrar Chamado",
+                title: "3️⃣ Encerrar Chamado",
                 description: "Finalizar o atendimento",
               },
               {
                 id: "back_to_menu",
-                title: "5️⃣ Menu Anterior",
+                title: "4️⃣ Menu Anterior",
                 description: "Retornar ao menu principal",
               },
             ],
@@ -1093,6 +1086,87 @@ async function sendSemedServersMenu(to) {
   } catch (error) {
     console.error(
       "Erro ao enviar submenu SEMED:",
+      error?.response?.data || error.message
+    );
+  }
+}
+
+// -----------------------------------------------------
+// NOVO SUBMENU: Servidores Escola (7 tópicos)
+// -----------------------------------------------------
+async function sendSchoolServersMenu(to) {
+  const schoolMenu = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      header: { type: "text", text: "🏫 Servidores Escola" },
+      body: {
+        text: "Selecione uma das 7 opções abaixo para continuar:",
+      },
+      footer: {
+        text: "Como podemos ajudar?",
+      },
+      action: {
+        button: "Ver Opções",
+        sections: [
+          {
+            title: "Funções Disponíveis",
+            rows: [
+              {
+                id: "school_option_1",
+                title: "1️⃣ Opção 1",
+                description: "Descrição da Opção 1",
+              },
+              {
+                id: "school_option_2",
+                title: "2️⃣ Opção 2",
+                description: "Descrição da Opção 2",
+              },
+              {
+                id: "school_option_3",
+                title: "3️⃣ Opção 3",
+                description: "Descrição da Opção 3",
+              },
+              {
+                id: "school_option_4",
+                title: "4️⃣ Opção 4",
+                description: "Descrição da Opção 4",
+              },
+              {
+                id: "school_option_5",
+                title: "5️⃣ Opção 5",
+                description: "Descrição da Opção 5",
+              },
+              {
+                id: "school_option_6",
+                title: "6️⃣ Opção 6",
+                description: "Descrição da Opção 6",
+              },
+              {
+                id: "school_option_7",
+                title: "7️⃣ Encerrar",
+                description: "Finalizar o atendimento",
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+  try {
+    await axios.post(
+      `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
+      schoolMenu,
+      {
+        headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Erro ao enviar submenu Servidores Escola:",
       error?.response?.data || error.message
     );
   }
