@@ -1436,7 +1436,7 @@ async function sendParentsMenu(to) {
   }
 }
 
-async function sendSemedServersMenu(to) {
+async function sendParentsMenu(to) {
   const submenuMessage = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -1444,34 +1444,45 @@ async function sendSemedServersMenu(to) {
     type: "interactive",
     interactive: {
       type: "list",
-      header: { type: "text", text: "👩‍🏫 Servidores SEMED" },
+      header: { type: "text", text: "👨‍👩‍👧 Pais e Responsáveis" },
       body: { text: "Selecione a opção desejada:" },
       footer: { text: "Como podemos ajudar?" },
       action: {
         button: "Ver Opções",
         sections: [
           {
-            title: "Necessidades",
+            // Encurtamos o title e alguns dos row titles
+            title: "Pais/Responsáveis",
             rows: [
               {
-                id: "request_driver",
-                title: "1️⃣ Solicitar Motorista",
-                description: "Solicitar transporte",
+                id: "parents_option_1",
+                title: "1️⃣ Ponto de Parada",
+                description: "Buscar ponto de parada mais próximo",
               },
               {
-                id: "speak_to_agent",
-                title: "2️⃣ Falar com Atendente",
-                description: "Conversar com um atendente",
+                id: "parents_option_2",
+                title: "2️⃣ Concessão Rota",
+                description: "Solicitar transporte escolar",
               },
               {
-                id: "end_service",
-                title: "3️⃣ Encerrar Chamado",
-                description: "Finalizar o atendimento",
+                id: "parents_option_3",
+                title: "3️⃣ Fazer Informe",
+                description: "Denúncia, elogio ou sugestão",
               },
               {
-                id: "back_to_menu",
-                title: "4️⃣ Menu Anterior",
-                description: "Retornar ao menu principal",
+                id: "parents_option_4",
+                title: "4️⃣ Atendente",
+                description: "Falar com um atendente humano",
+              },
+              {
+                id: "parents_option_5",
+                title: "5️⃣ Voltar",
+                description: "Retorna ao menu principal",
+              },
+              {
+                id: "parents_option_6",
+                title: "6️⃣ Encerrar",
+                description: "Finalizar atendimento",
               },
             ],
           },
@@ -1479,6 +1490,7 @@ async function sendSemedServersMenu(to) {
       },
     },
   };
+
   try {
     await axios.post(
       `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
@@ -1489,7 +1501,7 @@ async function sendSemedServersMenu(to) {
     );
   } catch (error) {
     console.error(
-      "Erro ao enviar submenu SEMED:",
+      "Erro ao enviar submenu Pais/Responsáveis:",
       error?.response?.data || error.message
     );
   }
