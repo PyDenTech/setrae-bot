@@ -86,7 +86,6 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(400);
     }
 
-    // Reinicia o timer de inatividade
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
@@ -97,12 +96,9 @@ app.post("/webhook", async (req, res) => {
       }, TIMEOUT_DURATION);
     };
 
-    // Se já existir um fluxo em andamento
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
-        // -------------------------------------------------
-        // FLUXO INFORME (Pais)
-        // -------------------------------------------------
+        // Fluxo INFORME (Pais)
         case "parents_informe_type":
           if (message.interactive && message.interactive.button_reply) {
             userState[senderNumber].parents_informe_type =
@@ -522,7 +518,6 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
-        // FLUXO PARA "ENVIAR INFORME" (ESCOLA)
         case "school_informe_tipo":
           if (message.interactive && message.interactive.button_reply) {
             userState[senderNumber].informe_tipo =
@@ -544,7 +539,6 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
-        // FLUXO PARA "STATUS DE ROTAS" (ESCOLA)
         case "school_status_rotas_id":
           await sendTextMessage(
             senderNumber,
@@ -553,7 +547,6 @@ app.post("/webhook", async (req, res) => {
           await endConversation(senderNumber, "Esperamos ter ajudado!");
           break;
 
-        // FLUXO PARA "AGENDA DE VEÍCULOS" (ESCOLA)
         case "school_agenda_veic_data":
           await sendTextMessage(
             senderNumber,
@@ -645,7 +638,7 @@ app.post("/webhook", async (req, res) => {
           break;
 
         case "parents_option_4":
-          // Encaminha para atendente humano de transporte escolar
+          // Encaminha para atendente humano de transporte_escolar
           await handoffToHuman(senderNumber, "transporte_escolar");
           break;
 
@@ -732,10 +725,7 @@ Transporte Público: ${infoTransporte}
         );
       }
       setInactivityTimeout();
-    }
-
-    // Se não houver fluxo
-    else {
+    } else {
       await sendInteractiveListMessage(senderNumber);
       setInactivityTimeout();
     }
@@ -748,13 +738,10 @@ Transporte Público: ${infoTransporte}
 // HANDOFF: Encaminhar para atendente humano
 // -----------------------------------------------------
 async function handoffToHuman(senderNumber, subject) {
-  // Seleciona número do agente baseado no assunto
   const agentNumber = HUMAN_AGENTS[subject] || OPERATOR_NUMBER;
-  // Notifica o agente
   const handoffMsg = `👋 *Nova solicitação de conversa* sobre *${subject}*.\nUsuário: +${senderNumber}\nPor favor, entre em contato.`;
   await sendTextMessage(agentNumber, handoffMsg);
 
-  // Encerra a conversa do bot com o usuário
   await endConversation(
     senderNumber,
     "Um atendente foi acionado e entrará em contato em breve. Obrigado!"
@@ -927,9 +914,6 @@ Por favor, verifique e providencie um motorista.`;
   }
 }
 
-// -----------------------------------------------------
-// SALVAR SOLICITAÇÃO DE CARRO (ESCOLA)
-// -----------------------------------------------------
 async function saveSchoolCarRequest(senderNumber) {
   try {
     const {
@@ -988,9 +972,6 @@ Por favor, verifique e providencie um carro.`;
   }
 }
 
-// -----------------------------------------------------
-// SALVAR INFORME (ESCOLA)
-// -----------------------------------------------------
 async function saveSchoolInforme(senderNumber) {
   try {
     const { informe_tipo, informe_descricao } = userState[senderNumber];
@@ -1021,9 +1002,6 @@ Verifique no sistema para mais detalhes.`;
   }
 }
 
-// -----------------------------------------------------
-// SALVAR INFORME (PAIS/RESPONSÁVEIS)
-// -----------------------------------------------------
 async function saveParentsInforme(senderNumber) {
   try {
     const { parents_informe_type, parents_informe_desc } =
@@ -1565,9 +1543,6 @@ async function sendSchoolServersMenu(to) {
   }
 }
 
-/**
- * Envia texto simples via WhatsApp
- */
 async function sendTextMessage(to, text) {
   const message = {
     messaging_product: "whatsapp",
@@ -1592,9 +1567,6 @@ async function sendTextMessage(to, text) {
   }
 }
 
-/**
- * Envia botões interativos
- */
 async function sendInteractiveMessageWithButtons(
   to,
   bodyText,
@@ -1643,7 +1615,6 @@ async function sendInteractiveMessageWithButtons(
   }
 }
 
-// Inicia o servidor
 app.listen(BOT_PORT, () => {
   console.log(`BOT rodando na porta ${BOT_PORT}...`);
 });
