@@ -86,7 +86,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(400);
     }
 
-    // Reinicia o timer de inatividade para este usuário
+    // Reinicia ou define o timer de inatividade
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
@@ -97,10 +97,14 @@ app.post("/webhook", async (req, res) => {
       }, TIMEOUT_DURATION);
     };
 
-    // Se houver fluxo em andamento
+    // -----------------------------------------------------
+    // SE JÁ EXISTE UM FLUXO EM ANDAMENTO
+    // -----------------------------------------------------
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
-        // FLUXO DE INFORME (PAIS)
+        // -------------------------
+        // FLUXO "FAZER INFORME" (Pais)
+        // -------------------------
         case "parents_informe_type":
           if (message.interactive && message.interactive.button_reply) {
             userState[senderNumber].parents_informe_type =
@@ -547,7 +551,9 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // Se for list_reply (Menus)
+    // -----------------------------------------------------
+    // SE NÃO HÁ FLUXO E É UMA LIST_REPLY (Menus)
+    // -----------------------------------------------------
     else if (message.interactive && message.interactive.list_reply) {
       const selectedOption = message.interactive.list_reply.id;
 
@@ -639,16 +645,18 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
-        // Caso não reconhecido
         default:
           await sendInteractiveListMessage(senderNumber);
       }
       setInactivityTimeout();
     }
 
-    // Se for button_reply
+    // -----------------------------------------------------
+    // SE É UMA button_reply (Ex: Sim/Não)
+    // -----------------------------------------------------
     else if (message.interactive && message.interactive.button_reply) {
       const buttonResponse = message.interactive.button_reply.id;
+
       if (buttonResponse === "confirm_yes") {
         await checkStudentTransport(senderNumber);
       } else if (buttonResponse === "confirm_no") {
@@ -681,7 +689,9 @@ app.post("/webhook", async (req, res) => {
       setInactivityTimeout();
     }
 
-    // Se userState é "awaiting_aluno_id_or_cpf"
+    // -----------------------------------------------------
+    // SE userState é "awaiting_aluno_id_or_cpf"
+    // -----------------------------------------------------
     else if (userState[senderNumber] === "awaiting_aluno_id_or_cpf") {
       const aluno = await findStudentByIdOrCpf(text);
       if (aluno) {
@@ -712,13 +722,18 @@ Transporte Público: ${infoTransporte}
         );
       }
       setInactivityTimeout();
-    } else {
-      // Nenhum fluxo em andamento: mostra menu principal
+    }
+
+    // -----------------------------------------------------
+    // SE NENHUM FLUXO ESTÁ ATIVO
+    // -----------------------------------------------------
+    else {
       await sendInteractiveListMessage(senderNumber);
       setInactivityTimeout();
     }
   }
 
+  // Retorna 200 OK para o webhook
   res.sendStatus(200);
 });
 
@@ -1465,12 +1480,10 @@ async function sendSemedServersMenu(to) {
 }
 
 async function sendSchoolServersMenu(to) {
-  // Substituímos "Status de Rotas (3)" e "Agenda Veículos (4)"
-  // conforme pedido: (3) Falar com Atendente, (4) removido
-  // Agora o menu terá 4 itens:
+  // Aqui o menu terá 4 itens:
   // 1) Solicitar Carro
   // 2) Enviar Informe
-  // 3) Falar com Atendente
+  // 3) Falar com Atendente (Adm)
   // 4) Encerrar
   const schoolMenu = {
     messaging_product: "whatsapp",
@@ -1508,7 +1521,7 @@ async function sendSchoolServersMenu(to) {
                 description: "Falar com atendente humano (adm)",
               },
               {
-                id: "school_option_5", // iremos reutilizar o ID 5 para Encerrar
+                id: "school_option_5", // usaremos esse ID para Encerrar
                 title: "4️⃣ Encerrar",
                 description: "Finalizar o atendimento",
               },
@@ -1534,6 +1547,9 @@ async function sendSchoolServersMenu(to) {
   }
 }
 
+/**
+ * Envia texto simples via WhatsApp
+ */
 async function sendTextMessage(to, text) {
   const message = {
     messaging_product: "whatsapp",
@@ -1558,6 +1574,9 @@ async function sendTextMessage(to, text) {
   }
 }
 
+/**
+ * Envia botões interativos
+ */
 async function sendInteractiveMessageWithButtons(
   to,
   bodyText,
