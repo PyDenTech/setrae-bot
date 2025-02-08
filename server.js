@@ -1380,7 +1380,8 @@ async function sendParentsMenu(to) {
         button: "Ver Opções",
         sections: [
           {
-            title: "Atendimento para Pais/Responsáveis",
+            // Encurte o title abaixo:
+            title: "Pais e Responsáveis",
             rows: [
               {
                 id: "parents_option_1",
@@ -1404,7 +1405,7 @@ async function sendParentsMenu(to) {
               },
               {
                 id: "parents_option_5",
-                title: "5️⃣ Voltar ao Menu Anterior",
+                title: "5️⃣ Voltar",
                 description: "Retorna ao menu principal",
               },
               {
@@ -1418,6 +1419,7 @@ async function sendParentsMenu(to) {
       },
     },
   };
+
   try {
     await axios.post(
       `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
