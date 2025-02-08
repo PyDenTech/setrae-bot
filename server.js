@@ -32,7 +32,7 @@ const TIMEOUT_DURATION = 10 * 60 * 1000; // 10 minutos
 // -----------------------------------------------------
 // Contato “operador geral” (pode ou não ser usado)
 // -----------------------------------------------------
-const OPERATOR_NUMBER = "5594992204653"; // Ex.: seu contato principal
+const OPERATOR_NUMBER = "5594992204653";
 
 // -----------------------------------------------------
 // Contatos específicos para handoff
@@ -86,6 +86,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(400);
     }
 
+    // Reinicia o timer de inatividade para este usuário
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
@@ -96,9 +97,10 @@ app.post("/webhook", async (req, res) => {
       }, TIMEOUT_DURATION);
     };
 
+    // Se houver fluxo em andamento
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
-        // Fluxo INFORME (Pais)
+        // FLUXO DE INFORME (PAIS)
         case "parents_informe_type":
           if (message.interactive && message.interactive.button_reply) {
             userState[senderNumber].parents_informe_type =
@@ -447,7 +449,7 @@ app.post("/webhook", async (req, res) => {
           break;
 
         // -------------------------------------------------
-        // FLUXO SERVIDORES ESCOLA (5 OPÇÕES)
+        // FLUXO SERVIDORES ESCOLA
         // -------------------------------------------------
         case "school_car_nome_escola":
           userState[senderNumber].nome_escola = text;
@@ -539,29 +541,13 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
-        case "school_status_rotas_id":
-          await sendTextMessage(
-            senderNumber,
-            `Consultando status da rota ID: ${text}...\nExemplo: "Rota ativa, previsão 07:30."`
-          );
-          await endConversation(senderNumber, "Esperamos ter ajudado!");
-          break;
-
-        case "school_agenda_veic_data":
-          await sendTextMessage(
-            senderNumber,
-            `Agenda de veículos para data ${text}:\n- Veículo A: 08:00 - 10:00\n- Veículo B: 10:30 - 12:00\n(Exemplo ilustrativo.)`
-          );
-          await endConversation(senderNumber, "Esperamos ter ajudado!");
-          break;
-
         default:
           await sendInteractiveListMessage(senderNumber);
       }
       setInactivityTimeout();
     }
 
-    // Se for list_reply
+    // Se for list_reply (Menus)
     else if (message.interactive && message.interactive.list_reply) {
       const selectedOption = message.interactive.list_reply.id;
 
@@ -579,19 +565,19 @@ app.post("/webhook", async (req, res) => {
           await sendSchoolServersMenu(senderNumber);
           break;
 
-        case "request_driver":
-          userState[senderNumber] = { step: "driver_name" };
-          await sendTextMessage(
-            senderNumber,
-            "Para solicitar um motorista, digite seu nome completo:"
-          );
+        case "option_4":
+          // Fornecedores - Em desenvolvimento
+          await sendTextMessage(senderNumber, "Em desenvolvimento...");
+          await endConversation(senderNumber, "Atendimento encerrado.");
           break;
 
-        case "back_to_menu":
-          await sendInteractiveListMessage(senderNumber);
+        case "option_5":
+          // Motoristas - Em desenvolvimento
+          await sendTextMessage(senderNumber, "Em desenvolvimento...");
+          await endConversation(senderNumber, "Atendimento encerrado.");
           break;
 
-        case "end_service":
+        case "option_6":
           await endConversation(
             senderNumber,
             "Atendimento encerrado. Precisando de algo, é só chamar!"
@@ -638,7 +624,7 @@ app.post("/webhook", async (req, res) => {
           break;
 
         case "parents_option_4":
-          // Encaminha para atendente humano de transporte_escolar
+          // handoffToHuman para transporte escolar
           await handoffToHuman(senderNumber, "transporte_escolar");
           break;
 
@@ -653,6 +639,7 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
+        // Caso não reconhecido
         default:
           await sendInteractiveListMessage(senderNumber);
       }
@@ -726,6 +713,7 @@ Transporte Público: ${infoTransporte}
       }
       setInactivityTimeout();
     } else {
+      // Nenhum fluxo em andamento: mostra menu principal
       await sendInteractiveListMessage(senderNumber);
       setInactivityTimeout();
     }
@@ -1216,6 +1204,7 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
+
 function toRad(value) {
   return (value * Math.PI) / 180;
 }
@@ -1476,6 +1465,13 @@ async function sendSemedServersMenu(to) {
 }
 
 async function sendSchoolServersMenu(to) {
+  // Substituímos "Status de Rotas (3)" e "Agenda Veículos (4)"
+  // conforme pedido: (3) Falar com Atendente, (4) removido
+  // Agora o menu terá 4 itens:
+  // 1) Solicitar Carro
+  // 2) Enviar Informe
+  // 3) Falar com Atendente
+  // 4) Encerrar
   const schoolMenu = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -1485,7 +1481,7 @@ async function sendSchoolServersMenu(to) {
       type: "list",
       header: { type: "text", text: "🏫 Servidores Escola" },
       body: {
-        text: "Selecione uma das 5 opções abaixo para continuar:",
+        text: "Selecione a opção desejada:",
       },
       footer: {
         text: "Como podemos ajudar?",
@@ -1508,17 +1504,12 @@ async function sendSchoolServersMenu(to) {
               },
               {
                 id: "school_option_3",
-                title: "3️⃣ Status de Rotas",
-                description: "Consulte a situação das rotas ativas.",
+                title: "3️⃣ Atendente",
+                description: "Falar com atendente humano (adm)",
               },
               {
-                id: "school_option_4",
-                title: "4️⃣ Agenda Veículos",
-                description: "Ver disponibilidade e horários.",
-              },
-              {
-                id: "school_option_5",
-                title: "5️⃣ Encerrar",
+                id: "school_option_5", // iremos reutilizar o ID 5 para Encerrar
+                title: "4️⃣ Encerrar",
                 description: "Finalizar o atendimento",
               },
             ],
@@ -1615,6 +1606,7 @@ async function sendInteractiveMessageWithButtons(
   }
 }
 
+// Inicia o servidor
 app.listen(BOT_PORT, () => {
   console.log(`BOT rodando na porta ${BOT_PORT}...`);
 });
