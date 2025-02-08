@@ -93,7 +93,39 @@ app.post("/webhook", async (req, res) => {
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
         // -------------------------------------------------
-        // FLUXO SOLICITAÇÃO DE ROTA (PAIS/ALUNOS)
+        // SUBMENU PAIS/RESPONSÁVEIS
+        // -------------------------------------------------
+        // 1) Consultar ponto de parada (fluxo já existente "awaiting_aluno_id_or_cpf")
+        // 2) Solicitar concessão de rota (termos_uso -> ... -> observacoes)
+        // 3) Fazer informe (denúncia, elogio, sugestão) => "parents_informe_type"
+        // 4) Falar com atendente => Encerrar fluxo ou direcionar
+        // 5) Voltar ao menu anterior
+        // 6) Encerrar conversa
+
+        // Ponto 3: fluxo do informe (Pais)
+        case "parents_informe_type":
+          if (message.interactive && message.interactive.button_reply) {
+            userState[senderNumber].parents_informe_type =
+              message.interactive.button_reply.id;
+            userState[senderNumber].step = "parents_informe_desc";
+            await sendTextMessage(
+              senderNumber,
+              "Descreva o informe (denúncia, elogio ou sugestão):"
+            );
+          }
+          break;
+
+        case "parents_informe_desc":
+          userState[senderNumber].parents_informe_desc = text;
+          await saveParentsInforme(senderNumber);
+          await endConversation(
+            senderNumber,
+            "Informe registrado com sucesso! Obrigado."
+          );
+          break;
+
+        // -------------------------------------------------
+        // FLUXO SOLICITAÇÃO DE ROTA (PAIS/ALUNOS) - JÁ EXISTENTE
         // -------------------------------------------------
         case "termos_uso":
           if (message.interactive && message.interactive.button_reply) {
@@ -301,6 +333,7 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
+        // Fluxo de localização do aluno (já existente para checar ponto de parada)
         case "enviar_localizacao":
           if (location) {
             userState[senderNumber].latitude = location.latitude;
@@ -493,7 +526,7 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
-        // FLUXO PARA "ENVIAR INFORME"
+        // FLUXO PARA "ENVIAR INFORME" (ESCOLA)
         case "school_informe_tipo":
           if (message.interactive && message.interactive.button_reply) {
             userState[senderNumber].informe_tipo =
@@ -515,10 +548,8 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
-        // FLUXO PARA "STATUS DE ROTAS"
+        // FLUXO PARA "STATUS DE ROTAS" (ESCOLA)
         case "school_status_rotas_id":
-          // Aqui você poderia buscar no banco o status da rota
-          // Mas faremos apenas uma resposta ilustrativa
           await sendTextMessage(
             senderNumber,
             `Consultando status da rota ID: ${text}...\n\nExemplo de resposta: "Rota ativa, previsão de chegada às 07:30."`
@@ -526,9 +557,8 @@ app.post("/webhook", async (req, res) => {
           await endConversation(senderNumber, "Esperamos ter ajudado!");
           break;
 
-        // FLUXO PARA "AGENDA DE VEÍCULOS"
+        // FLUXO PARA "AGENDA DE VEÍCULOS" (ESCOLA)
         case "school_agenda_veic_data":
-          // Aqui poderia haver lógica de busca em BD
           await sendTextMessage(
             senderNumber,
             `Agenda de veículos para data ${text}:\n- Veículo A: 08:00 - 10:00\n- Veículo B: 10:30 - 12:00\n\n(Exemplo ilustrativo.)`
@@ -548,18 +578,14 @@ app.post("/webhook", async (req, res) => {
 
       switch (selectedOption) {
         case "option_1":
-          userState[senderNumber] = "awaiting_aluno_id_or_cpf";
-          await sendTextMessage(
-            senderNumber,
-            "Por favor, insira o ID de matrícula ou CPF do aluno:"
-          );
+          // Submenu Pais/Responsáveis
+          await sendParentsMenu(senderNumber);
           break;
 
         case "option_2":
           await sendSemedServersMenu(senderNumber);
           break;
 
-        // Submenu: Servidores Escola (5 opções)
         case "option_3":
           await sendSchoolServersMenu(senderNumber);
           break;
@@ -583,51 +609,65 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
-        // -------------------------------------------------
-        // DETALHANDO AS 5 OPÇÕES DO SUBMENU ESCOLA
-        // -------------------------------------------------
-        case "school_option_1":
-          userState[senderNumber] = { step: "school_car_nome_escola" };
+        // SUBMENU: PAIS/RESPONSÁVEIS
+        case "parents_option_1":
+          // 1) Consultar ponto de parada
+          userState[senderNumber] = "awaiting_aluno_id_or_cpf";
           await sendTextMessage(
             senderNumber,
-            "Para agendar carro, informe o nome da escola:"
+            "Por favor, insira o ID de matrícula ou CPF do aluno:"
           );
           break;
 
-        case "school_option_2":
-          // Perguntar tipo de informe: Elogio, Reclamação, Feedback, Geral
-          userState[senderNumber] = { step: "school_informe_tipo" };
+        case "parents_option_2":
+          // 2) Solicitar concessão de rota
+          userState[senderNumber] = { step: "termos_uso" };
+          await sendTextMessage(
+            senderNumber,
+            "Para solicitar concessão de rota, você precisa concordar com os termos. Você está ciente das regras de distância mínima, idade e etc.?"
+          );
           await sendInteractiveMessageWithButtons(
             senderNumber,
-            "Selecione o tipo do informe:",
+            "Confirma a aceitação dos termos de uso do transporte?",
             "",
+            "Sim",
+            "aceito_termos",
+            "Não",
+            "recuso_termos"
+          );
+          break;
+
+        case "parents_option_3":
+          // 3) Fazer informe (denúncia, elogio, sugestão)
+          userState[senderNumber] = { step: "parents_informe_type" };
+          await sendInteractiveMessageWithButtons(
+            senderNumber,
+            "Selecione o tipo de informe:",
+            "",
+            "Denúncia",
+            "denuncia",
             "Elogio",
-            "elogio",
-            "Reclamação",
-            "reclamacao"
+            "elogio_parents"
           );
-          // Obs: Se quiser mais de 2 botões, precisará adaptar (máx 3 no total).
+          // Obs: Máximo 3 botões, se quiser a sugestão, precisamos tratar => com outro approach
           break;
 
-        case "school_option_3":
-          // STATUS DE ROTAS
-          userState[senderNumber] = { step: "school_status_rotas_id" };
-          await sendTextMessage(
+        case "parents_option_4":
+          // 4) Falar com atendente
+          await endConversation(
             senderNumber,
-            "Informe o ID da rota que deseja consultar:"
+            "Encaminharemos você para um atendente em breve. Obrigado!"
           );
+          // Ou poderia redirecionar para outro fluxo
           break;
 
-        case "school_option_4":
-          // AGENDA DE VEÍCULOS
-          userState[senderNumber] = { step: "school_agenda_veic_data" };
-          await sendTextMessage(
-            senderNumber,
-            "Informe a data que deseja consultar (ex: 15/02/2025):"
-          );
+        case "parents_option_5":
+          // 5) Voltar ao menu anterior
+          await sendInteractiveListMessage(senderNumber);
           break;
 
-        case "school_option_5":
+        case "parents_option_6":
+          // 6) Encerrar conversa
           await endConversation(
             senderNumber,
             "Atendimento encerrado. Precisando de algo, é só chamar!"
@@ -979,6 +1019,40 @@ Verifique no sistema para mais detalhes.`;
 }
 
 // -----------------------------------------------------
+// SALVAR INFORME (PAIS/RESPONSÁVEIS)
+// -----------------------------------------------------
+async function saveParentsInforme(senderNumber) {
+  try {
+    const { parents_informe_type, parents_informe_desc } =
+      userState[senderNumber];
+
+    const client = await pool.connect();
+    const insertQuery = `
+      INSERT INTO informes_parents (
+        tipo,
+        descricao
+      )
+      VALUES ($1, $2)
+    `;
+    const values = [parents_informe_type, parents_informe_desc];
+    await client.query(insertQuery, values);
+    client.release();
+
+    console.log("Informe de Pais/Responsáveis salvo em informes_parents!");
+
+    const notifyMsg = `✉️ *NOVO INFORME (Pais/Responsáveis)* ✉️
+
+*Tipo:* ${parents_informe_type}
+*Descrição:* ${parents_informe_desc}
+
+Verifique no sistema para mais detalhes.`;
+    await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
+  } catch (error) {
+    console.error("Erro ao salvar informe de Pais/Responsáveis:", error);
+  }
+}
+
+// -----------------------------------------------------
 // Zoneamento e verificação de rotas
 // -----------------------------------------------------
 async function getZoneInfo(latitude, longitude) {
@@ -1217,7 +1291,7 @@ async function endConversation(
 }
 
 // -----------------------------------------------------
-// MENSAGENS INTERATIVAS (Menu Principal etc.)
+// MENSAGENS INTERATIVAS (Menus)
 // -----------------------------------------------------
 async function sendInteractiveListMessage(to) {
   const listMessage = {
@@ -1291,6 +1365,75 @@ async function sendInteractiveListMessage(to) {
   }
 }
 
+async function sendParentsMenu(to) {
+  const submenuMessage = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      header: { type: "text", text: "👨‍👩‍👧 Pais e Responsáveis" },
+      body: { text: "Selecione a opção desejada:" },
+      footer: { text: "Como podemos ajudar?" },
+      action: {
+        button: "Ver Opções",
+        sections: [
+          {
+            title: "Atendimento para Pais/Responsáveis",
+            rows: [
+              {
+                id: "parents_option_1",
+                title: "1️⃣ Consultar Ponto de Parada",
+                description: "Buscar ponto de parada mais próximo",
+              },
+              {
+                id: "parents_option_2",
+                title: "2️⃣ Concessão de Rota",
+                description: "Solicitar transporte",
+              },
+              {
+                id: "parents_option_3",
+                title: "3️⃣ Fazer Informe",
+                description: "Denúncia, elogio ou sugestão",
+              },
+              {
+                id: "parents_option_4",
+                title: "4️⃣ Falar com Atendente",
+                description: "Encaminhar para suporte humano",
+              },
+              {
+                id: "parents_option_5",
+                title: "5️⃣ Voltar ao Menu Anterior",
+                description: "Retorna ao menu principal",
+              },
+              {
+                id: "parents_option_6",
+                title: "6️⃣ Encerrar",
+                description: "Finalizar atendimento",
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+  try {
+    await axios.post(
+      `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
+      submenuMessage,
+      {
+        headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Erro ao enviar submenu Pais/Responsáveis:",
+      error?.response?.data || error.message
+    );
+  }
+}
+
 async function sendSemedServersMenu(to) {
   const submenuMessage = {
     messaging_product: "whatsapp",
@@ -1350,9 +1493,6 @@ async function sendSemedServersMenu(to) {
   }
 }
 
-// -----------------------------------------------------
-// SUBMENU ATUALIZADO: Servidores Escola (5 opções)
-// -----------------------------------------------------
 async function sendSchoolServersMenu(to) {
   const schoolMenu = {
     messaging_product: "whatsapp",
