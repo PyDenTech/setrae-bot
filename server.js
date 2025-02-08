@@ -78,7 +78,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(400);
     }
 
-    // Zera/define o timer de inatividade
+    // Reinicia o timer de inatividade
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
@@ -95,14 +95,6 @@ app.post("/webhook", async (req, res) => {
         // -------------------------------------------------
         // SUBMENU PAIS/RESPONSÁVEIS
         // -------------------------------------------------
-        // 1) Consultar ponto de parada (fluxo já existente "awaiting_aluno_id_or_cpf")
-        // 2) Solicitar concessão de rota (termos_uso -> ... -> observacoes)
-        // 3) Fazer informe (denúncia, elogio, sugestão) => "parents_informe_type"
-        // 4) Falar com atendente => Encerrar fluxo ou direcionar
-        // 5) Voltar ao menu anterior
-        // 6) Encerrar conversa
-
-        // Ponto 3: fluxo do informe (Pais)
         case "parents_informe_type":
           if (message.interactive && message.interactive.button_reply) {
             userState[senderNumber].parents_informe_type =
@@ -125,7 +117,7 @@ app.post("/webhook", async (req, res) => {
           break;
 
         // -------------------------------------------------
-        // FLUXO SOLICITAÇÃO DE ROTA (PAIS/ALUNOS) - JÁ EXISTENTE
+        // FLUXO SOLICITAÇÃO DE ROTA (PAIS/ALUNOS)
         // -------------------------------------------------
         case "termos_uso":
           if (message.interactive && message.interactive.button_reply) {
@@ -333,7 +325,6 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
-        // Fluxo de localização do aluno (já existente para checar ponto de parada)
         case "enviar_localizacao":
           if (location) {
             userState[senderNumber].latitude = location.latitude;
@@ -489,11 +480,8 @@ app.post("/webhook", async (req, res) => {
         case "school_car_zona_await":
           if (message.interactive && message.interactive.button_reply) {
             const zonaResp = message.interactive.button_reply.id;
-            if (zonaResp === "zona_urbana") {
-              userState[senderNumber].zona = "Urbana";
-            } else {
-              userState[senderNumber].zona = "Rural";
-            }
+            userState[senderNumber].zona =
+              zonaResp === "zona_urbana" ? "Urbana" : "Rural";
             userState[senderNumber].step = "school_car_tempo_est";
             await sendTextMessage(
               senderNumber,
@@ -552,7 +540,7 @@ app.post("/webhook", async (req, res) => {
         case "school_status_rotas_id":
           await sendTextMessage(
             senderNumber,
-            `Consultando status da rota ID: ${text}...\n\nExemplo de resposta: "Rota ativa, previsão de chegada às 07:30."`
+            `Consultando status da rota ID: ${text}...\nExemplo: "Rota ativa, previsão 07:30."`
           );
           await endConversation(senderNumber, "Esperamos ter ajudado!");
           break;
@@ -561,7 +549,7 @@ app.post("/webhook", async (req, res) => {
         case "school_agenda_veic_data":
           await sendTextMessage(
             senderNumber,
-            `Agenda de veículos para data ${text}:\n- Veículo A: 08:00 - 10:00\n- Veículo B: 10:30 - 12:00\n\n(Exemplo ilustrativo.)`
+            `Agenda de veículos para data ${text}:\n- Veículo A: 08:00 - 10:00\n- Veículo B: 10:30 - 12:00\n(Exemplo ilustrativo.)`
           );
           await endConversation(senderNumber, "Esperamos ter ajudado!");
           break;
@@ -577,8 +565,8 @@ app.post("/webhook", async (req, res) => {
       const selectedOption = message.interactive.list_reply.id;
 
       switch (selectedOption) {
+        // MENU PRINCIPAL
         case "option_1":
-          // Submenu Pais/Responsáveis
           await sendParentsMenu(senderNumber);
           break;
 
@@ -611,7 +599,6 @@ app.post("/webhook", async (req, res) => {
 
         // SUBMENU: PAIS/RESPONSÁVEIS
         case "parents_option_1":
-          // 1) Consultar ponto de parada
           userState[senderNumber] = "awaiting_aluno_id_or_cpf";
           await sendTextMessage(
             senderNumber,
@@ -620,11 +607,10 @@ app.post("/webhook", async (req, res) => {
           break;
 
         case "parents_option_2":
-          // 2) Solicitar concessão de rota
           userState[senderNumber] = { step: "termos_uso" };
           await sendTextMessage(
             senderNumber,
-            "Para solicitar concessão de rota, você precisa concordar com os termos. Você está ciente das regras de distância mínima, idade e etc.?"
+            "Para solicitar concessão de rota, você precisa concordar com os termos. Está ciente das regras de distância mínima e etc.?"
           );
           await sendInteractiveMessageWithButtons(
             senderNumber,
@@ -638,7 +624,6 @@ app.post("/webhook", async (req, res) => {
           break;
 
         case "parents_option_3":
-          // 3) Fazer informe (denúncia, elogio, sugestão)
           userState[senderNumber] = { step: "parents_informe_type" };
           await sendInteractiveMessageWithButtons(
             senderNumber,
@@ -649,25 +634,20 @@ app.post("/webhook", async (req, res) => {
             "Elogio",
             "elogio_parents"
           );
-          // Obs: Máximo 3 botões, se quiser a sugestão, precisamos tratar => com outro approach
           break;
 
         case "parents_option_4":
-          // 4) Falar com atendente
           await endConversation(
             senderNumber,
             "Encaminharemos você para um atendente em breve. Obrigado!"
           );
-          // Ou poderia redirecionar para outro fluxo
           break;
 
         case "parents_option_5":
-          // 5) Voltar ao menu anterior
           await sendInteractiveListMessage(senderNumber);
           break;
 
         case "parents_option_6":
-          // 6) Encerrar conversa
           await endConversation(
             senderNumber,
             "Atendimento encerrado. Precisando de algo, é só chamar!"
@@ -759,7 +739,7 @@ Transporte Público: ${infoTransporte}
 });
 
 // -----------------------------------------------------
-//             FUNÇÕES DE BANCO E LÓGICA
+// FUNÇÕES DE BANCO E LÓGICA
 // -----------------------------------------------------
 async function findStudentByIdOrCpf(idOrCpf) {
   try {
@@ -1380,78 +1360,6 @@ async function sendParentsMenu(to) {
         button: "Ver Opções",
         sections: [
           {
-            // Encurte o title abaixo:
-            title: "Pais e Responsáveis",
-            rows: [
-              {
-                id: "parents_option_1",
-                title: "1️⃣ Consultar Ponto de Parada",
-                description: "Buscar ponto de parada mais próximo",
-              },
-              {
-                id: "parents_option_2",
-                title: "2️⃣ Concessão de Rota",
-                description: "Solicitar transporte",
-              },
-              {
-                id: "parents_option_3",
-                title: "3️⃣ Fazer Informe",
-                description: "Denúncia, elogio ou sugestão",
-              },
-              {
-                id: "parents_option_4",
-                title: "4️⃣ Falar com Atendente",
-                description: "Encaminhar para suporte humano",
-              },
-              {
-                id: "parents_option_5",
-                title: "5️⃣ Voltar",
-                description: "Retorna ao menu principal",
-              },
-              {
-                id: "parents_option_6",
-                title: "6️⃣ Encerrar",
-                description: "Finalizar atendimento",
-              },
-            ],
-          },
-        ],
-      },
-    },
-  };
-
-  try {
-    await axios.post(
-      `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
-      submenuMessage,
-      {
-        headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
-      }
-    );
-  } catch (error) {
-    console.error(
-      "Erro ao enviar submenu Pais/Responsáveis:",
-      error?.response?.data || error.message
-    );
-  }
-}
-
-async function sendParentsMenu(to) {
-  const submenuMessage = {
-    messaging_product: "whatsapp",
-    recipient_type: "individual",
-    to,
-    type: "interactive",
-    interactive: {
-      type: "list",
-      header: { type: "text", text: "👨‍👩‍👧 Pais e Responsáveis" },
-      body: { text: "Selecione a opção desejada:" },
-      footer: { text: "Como podemos ajudar?" },
-      action: {
-        button: "Ver Opções",
-        sections: [
-          {
-            // Encurtamos o title e alguns dos row titles
             title: "Pais/Responsáveis",
             rows: [
               {
@@ -1502,6 +1410,65 @@ async function sendParentsMenu(to) {
   } catch (error) {
     console.error(
       "Erro ao enviar submenu Pais/Responsáveis:",
+      error?.response?.data || error.message
+    );
+  }
+}
+
+async function sendSemedServersMenu(to) {
+  const submenuMessage = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      header: { type: "text", text: "👩‍🏫 Servidores SEMED" },
+      body: { text: "Selecione a opção desejada:" },
+      footer: { text: "Como podemos ajudar?" },
+      action: {
+        button: "Ver Opções",
+        sections: [
+          {
+            title: "Necessidades",
+            rows: [
+              {
+                id: "request_driver",
+                title: "1️⃣ Solicitar Motorista",
+                description: "Solicitar transporte",
+              },
+              {
+                id: "speak_to_agent",
+                title: "2️⃣ Falar com Atendente",
+                description: "Conversar com um atendente",
+              },
+              {
+                id: "end_service",
+                title: "3️⃣ Encerrar Chamado",
+                description: "Finalizar o atendimento",
+              },
+              {
+                id: "back_to_menu",
+                title: "4️⃣ Menu Anterior",
+                description: "Retornar ao menu principal",
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+  try {
+    await axios.post(
+      `${WHATSAPP_API_URL}/${PHONE_NUMBER_ID}/messages`,
+      submenuMessage,
+      {
+        headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Erro ao enviar submenu SEMED:",
       error?.response?.data || error.message
     );
   }
