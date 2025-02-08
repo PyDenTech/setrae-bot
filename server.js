@@ -561,7 +561,7 @@ app.post("/webhook", async (req, res) => {
           await sendSchoolServersMenu(senderNumber);
           break;
 
-        case "option_4":
+        /*         case "option_4":
           // Fornecedores
           await sendTextMessage(senderNumber, "Em desenvolvimento...");
           await endConversation(senderNumber, "Atendimento encerrado.");
@@ -571,7 +571,7 @@ app.post("/webhook", async (req, res) => {
           // Motoristas
           await sendTextMessage(senderNumber, "Em desenvolvimento...");
           await endConversation(senderNumber, "Atendimento encerrado.");
-          break;
+          break; */
 
         case "option_6":
           // Encerrar
