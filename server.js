@@ -30,13 +30,9 @@ let userTimers = {};
 const TIMEOUT_DURATION = 10 * 60 * 1000; // 10 minutos
 
 // -----------------------------------------------------
-// Contato “operador geral” (pode ou não ser usado)
+// Contatos para notificação
 // -----------------------------------------------------
-const OPERATOR_NUMBER = "5594992204653";
-
-// -----------------------------------------------------
-// Contatos específicos para handoff
-// -----------------------------------------------------
+const OPERATOR_NUMBER = "5594992204653"; // Operador Geral (pode ser usado ou não)
 const HUMAN_AGENTS = {
   transporte_escolar: "5594991989803", // +55 94 99198-9803 (sem +)
   transporte_administrativo: "5594984131399", // +55 94 98413-1399 (sem +)
@@ -86,7 +82,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(400);
     }
 
-    // Reinicia ou define o timer de inatividade
+    // Ajusta o timer de inatividade (10 min)
     if (userTimers[senderNumber]) clearTimeout(userTimers[senderNumber]);
     const setInactivityTimeout = () => {
       userTimers[senderNumber] = setTimeout(async () => {
@@ -97,14 +93,10 @@ app.post("/webhook", async (req, res) => {
       }, TIMEOUT_DURATION);
     };
 
-    // -----------------------------------------------------
-    // SE JÁ EXISTE UM FLUXO EM ANDAMENTO
-    // -----------------------------------------------------
+    // Se há um fluxo em andamento (userState[senderNumber].step)
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
-        // -------------------------
-        // FLUXO "FAZER INFORME" (Pais)
-        // -------------------------
+        // ---------- INFORME (Pais) ----------
         case "parents_informe_type":
           if (message.interactive && message.interactive.button_reply) {
             userState[senderNumber].parents_informe_type =
@@ -126,9 +118,7 @@ app.post("/webhook", async (req, res) => {
           );
           break;
 
-        // -------------------------------------------------
-        // FLUXO SOLICITAÇÃO DE ROTA (PAIS/ALUNOS)
-        // -------------------------------------------------
+        // ---------- SOLICITAÇÃO DE ROTA (Pais) ----------
         case "termos_uso":
           if (message.interactive && message.interactive.button_reply) {
             const resp = message.interactive.button_reply.id;
@@ -348,9 +338,7 @@ app.post("/webhook", async (req, res) => {
           }
           break;
 
-        // -------------------------------------------------
-        // FLUXO DE SOLICITAR MOTORISTA (SERVIDORES SEMED)
-        // -------------------------------------------------
+        // ---------- FLUXO SOLICITAR MOTORISTA (SEMED) ----------
         case "driver_name":
           userState[senderNumber].driver_name = text;
           userState[senderNumber].step = "driver_setor";
@@ -417,7 +405,7 @@ app.post("/webhook", async (req, res) => {
                 senderNumber,
                 "Entendido. Precisaremos de um veículo com carroceria. Qual o horário de necessidade do carro (Ex: 08:00)?"
               );
-            } else if (cargaResp === "driver_has_carga_no") {
+            } else {
               userState[senderNumber].driver_has_carga = false;
               userState[senderNumber].driver_car_needed = "qualquer";
               userState[senderNumber].step = "driver_hora_necessidade";
@@ -448,13 +436,11 @@ app.post("/webhook", async (req, res) => {
           );
           await endConversation(
             senderNumber,
-            "Solicitação de motorista registrada. Agradecemos o contato!"
+            "Solicitação de motorista registrada!"
           );
           break;
 
-        // -------------------------------------------------
-        // FLUXO SERVIDORES ESCOLA
-        // -------------------------------------------------
+        // ---------- FLUXO SERVIDORES ESCOLA ----------
         case "school_car_nome_escola":
           userState[senderNumber].nome_escola = text;
           userState[senderNumber].step = "school_car_qtd_passageiros";
@@ -520,7 +506,7 @@ app.post("/webhook", async (req, res) => {
           await saveSchoolCarRequest(senderNumber);
           await endConversation(
             senderNumber,
-            "Solicitação de carro registrada com sucesso! Obrigado."
+            "Solicitação de carro registrada com sucesso!"
           );
           break;
 
@@ -546,13 +532,14 @@ app.post("/webhook", async (req, res) => {
           break;
 
         default:
+          // Caso o step atual não tenha sido mapeado
           await sendInteractiveListMessage(senderNumber);
       }
       setInactivityTimeout();
     }
 
     // -----------------------------------------------------
-    // SE NÃO HÁ FLUXO E É UMA LIST_REPLY (Menus)
+    // SE NÃO TEM FLUXO (userState) E É LIST_REPLY (Menus)
     // -----------------------------------------------------
     else if (message.interactive && message.interactive.list_reply) {
       const selectedOption = message.interactive.list_reply.id;
@@ -560,38 +547,43 @@ app.post("/webhook", async (req, res) => {
       switch (selectedOption) {
         // MENU PRINCIPAL
         case "option_1":
+          // Pais e Alunos
           await sendParentsMenu(senderNumber);
           break;
 
         case "option_2":
+          // Servidores SEMED
           await sendSemedServersMenu(senderNumber);
           break;
 
         case "option_3":
+          // Servidores Escola
           await sendSchoolServersMenu(senderNumber);
           break;
 
         case "option_4":
-          // Fornecedores - Em desenvolvimento
+          // Fornecedores
           await sendTextMessage(senderNumber, "Em desenvolvimento...");
           await endConversation(senderNumber, "Atendimento encerrado.");
           break;
 
         case "option_5":
-          // Motoristas - Em desenvolvimento
+          // Motoristas
           await sendTextMessage(senderNumber, "Em desenvolvimento...");
           await endConversation(senderNumber, "Atendimento encerrado.");
           break;
 
         case "option_6":
+          // Encerrar
           await endConversation(
             senderNumber,
             "Atendimento encerrado. Precisando de algo, é só chamar!"
           );
           break;
 
-        // SUBMENU: PAIS/RESPONSÁVEIS
+        // SUBMENU: Pais e Responsáveis
         case "parents_option_1":
+          // Ponto de Parada
           userState[senderNumber] = "awaiting_aluno_id_or_cpf";
           await sendTextMessage(
             senderNumber,
@@ -600,6 +592,7 @@ app.post("/webhook", async (req, res) => {
           break;
 
         case "parents_option_2":
+          // Concessão de Rota
           userState[senderNumber] = { step: "termos_uso" };
           await sendTextMessage(
             senderNumber,
@@ -617,6 +610,7 @@ app.post("/webhook", async (req, res) => {
           break;
 
         case "parents_option_3":
+          // Fazer Informe
           userState[senderNumber] = { step: "parents_informe_type" };
           await sendInteractiveMessageWithButtons(
             senderNumber,
@@ -630,15 +624,82 @@ app.post("/webhook", async (req, res) => {
           break;
 
         case "parents_option_4":
-          // handoffToHuman para transporte escolar
+          // Falar com Atendente
           await handoffToHuman(senderNumber, "transporte_escolar");
           break;
 
         case "parents_option_5":
+          // Voltar ao Menu Principal
           await sendInteractiveListMessage(senderNumber);
           break;
 
         case "parents_option_6":
+          // Encerrar
+          await endConversation(
+            senderNumber,
+            "Atendimento encerrado. Precisando de algo, é só chamar!"
+          );
+          break;
+
+        // SUBMENU: Servidores SEMED
+        case "request_driver":
+          // step: driver_name => fluxo Solicitar Motorista
+          userState[senderNumber] = { step: "driver_name" };
+          await sendTextMessage(
+            senderNumber,
+            "Para solicitar um motorista, digite seu nome completo:"
+          );
+          break;
+
+        case "speak_to_agent":
+          // handoffToHuman("transporte_administrativo") => finaliza
+          await handoffToHuman(senderNumber, "transporte_administrativo");
+          break;
+
+        case "end_service":
+          // Encerrar Chamado
+          await endConversation(
+            senderNumber,
+            "Atendimento encerrado. Precisando de algo, é só chamar!"
+          );
+          break;
+
+        case "back_to_menu":
+          // Menu Anterior => retorna ao principal
+          await sendInteractiveListMessage(senderNumber);
+          break;
+
+        // SUBMENU: Servidores Escola
+        case "school_option_1":
+          // Solicitar Carro
+          userState[senderNumber] = { step: "school_car_nome_escola" };
+          await sendTextMessage(
+            senderNumber,
+            "Para solicitar carro, informe o nome da escola:"
+          );
+          break;
+
+        case "school_option_2":
+          // Enviar Informe (Escola)
+          userState[senderNumber] = { step: "school_informe_tipo" };
+          await sendInteractiveMessageWithButtons(
+            senderNumber,
+            "Selecione o tipo de informe da escola:",
+            "",
+            "Elogio",
+            "elogio_escola",
+            "Reclamação",
+            "reclamacao_escola"
+          );
+          break;
+
+        case "school_option_3":
+          // Falar com Atendente (Administrativo)
+          await handoffToHuman(senderNumber, "transporte_administrativo");
+          break;
+
+        case "school_option_5":
+          // Encerrar
           await endConversation(
             senderNumber,
             "Atendimento encerrado. Precisando de algo, é só chamar!"
@@ -652,7 +713,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     // -----------------------------------------------------
-    // SE É UMA button_reply (Ex: Sim/Não)
+    // Se for button_reply mas não há step (Sim/Não etc.)
     // -----------------------------------------------------
     else if (message.interactive && message.interactive.button_reply) {
       const buttonResponse = message.interactive.button_reply.id;
@@ -690,12 +751,12 @@ app.post("/webhook", async (req, res) => {
     }
 
     // -----------------------------------------------------
-    // SE userState é "awaiting_aluno_id_or_cpf"
+    // Se userState é "awaiting_aluno_id_or_cpf" (Ponto de parada)
     // -----------------------------------------------------
     else if (userState[senderNumber] === "awaiting_aluno_id_or_cpf") {
       const aluno = await findStudentByIdOrCpf(text);
       if (aluno) {
-        userState[senderNumber] = { aluno };
+        userState[senderNumber] = { aluno }; // substituímos o valor anterior
         const infoTransporte = aluno.transporte_escolar_poder_publico
           ? aluno.transporte_escolar_poder_publico
           : "Não informado (provavelmente não usuário)";
@@ -725,7 +786,8 @@ Transporte Público: ${infoTransporte}
     }
 
     // -----------------------------------------------------
-    // SE NENHUM FLUXO ESTÁ ATIVO
+    // Se não houver userState e não for interactive:
+    // Mostra o menu principal
     // -----------------------------------------------------
     else {
       await sendInteractiveListMessage(senderNumber);
@@ -733,7 +795,6 @@ Transporte Público: ${infoTransporte}
     }
   }
 
-  // Retorna 200 OK para o webhook
   res.sendStatus(200);
 });
 
@@ -833,8 +894,8 @@ async function saveRouteRequest(senderNumber) {
     ];
     await client.query(insertQuery, values);
     client.release();
-    console.log("Solicitação de rota salva na tabela cocessao_rota!");
 
+    console.log("Solicitação de rota salva na tabela cocessao_rota!");
     const notifyMsg = `🚌 *Nova solicitação de ROTA!* 🚌
 **Responsável:** ${nome_responsavel}
 **CPF:** ${cpf_responsavel}
@@ -893,10 +954,10 @@ async function saveDriverRequest(senderNumber) {
     ];
     await client.query(insertQuery, values);
     client.release();
+
     console.log(
       "Solicitação de motorista salva na tabela solicitacao_carros_administrativos!"
     );
-
     const cargoStr = driver_has_carga
       ? "Sim (caminhonete necessária)"
       : "Não (qualquer carro)";
@@ -957,7 +1018,6 @@ async function saveSchoolCarRequest(senderNumber) {
     console.log(
       "Solicitação de carro (escola) salva na tabela solicitacao_carro_escola!"
     );
-
     const notifyMsg = `🚐 *NOVA SOLICITAÇÃO DE CARRO (Escola)* 🚐
 
 *Escola:* ${nome_escola}
@@ -992,7 +1052,6 @@ async function saveSchoolInforme(senderNumber) {
     client.release();
 
     console.log("Informe da escola salvo em informes_escola!");
-
     const notifyMsg = `✉️ *NOVO INFORME DA ESCOLA* ✉️
 
 *Tipo:* ${informe_tipo}
@@ -1023,7 +1082,6 @@ async function saveParentsInforme(senderNumber) {
     client.release();
 
     console.log("Informe de Pais/Responsáveis salvo em informes_parents!");
-
     const notifyMsg = `✉️ *NOVO INFORME (Pais/Responsáveis)* ✉️
 
 *Tipo:* ${parents_informe_type}
@@ -1037,7 +1095,7 @@ Verifique no sistema para mais detalhes.`;
 }
 
 // -----------------------------------------------------
-// Zoneamento e verificação de rotas
+// Zoneamento/Rotas
 // -----------------------------------------------------
 async function getZoneInfo(latitude, longitude) {
   const resultObj = { inZone: false, zoneId: null };
@@ -1219,7 +1277,6 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
-
 function toRad(value) {
   return (value * Math.PI) / 180;
 }
@@ -1276,9 +1333,10 @@ async function endConversation(
 }
 
 // -----------------------------------------------------
-// MENSAGENS INTERATIVAS (Menus)
+// MENSAGENS INTERATIVAS (Menu Principal, Submenus, etc.)
 // -----------------------------------------------------
 async function sendInteractiveListMessage(to) {
+  // Menu Principal
   const listMessage = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -1351,6 +1409,7 @@ async function sendInteractiveListMessage(to) {
 }
 
 async function sendParentsMenu(to) {
+  // Submenu Pais e Alunos
   const submenuMessage = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -1421,6 +1480,7 @@ async function sendParentsMenu(to) {
 }
 
 async function sendSemedServersMenu(to) {
+  // Submenu Servidores SEMED
   const submenuMessage = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -1480,10 +1540,10 @@ async function sendSemedServersMenu(to) {
 }
 
 async function sendSchoolServersMenu(to) {
-  // Aqui o menu terá 4 itens:
+  // Submenu Servidores Escola
   // 1) Solicitar Carro
   // 2) Enviar Informe
-  // 3) Falar com Atendente (Adm)
+  // 3) Falar com Atendente (adm)
   // 4) Encerrar
   const schoolMenu = {
     messaging_product: "whatsapp",
@@ -1521,7 +1581,7 @@ async function sendSchoolServersMenu(to) {
                 description: "Falar com atendente humano (adm)",
               },
               {
-                id: "school_option_5", // usaremos esse ID para Encerrar
+                id: "school_option_5", // Encerrar
                 title: "4️⃣ Encerrar",
                 description: "Finalizar o atendimento",
               },
@@ -1548,7 +1608,7 @@ async function sendSchoolServersMenu(to) {
 }
 
 /**
- * Envia texto simples via WhatsApp
+ * Envia texto simples (text message)
  */
 async function sendTextMessage(to, text) {
   const message = {
@@ -1575,7 +1635,7 @@ async function sendTextMessage(to, text) {
 }
 
 /**
- * Envia botões interativos
+ * Envia botões interativos (2 botões)
  */
 async function sendInteractiveMessageWithButtons(
   to,
