@@ -30,9 +30,17 @@ let userTimers = {};
 const TIMEOUT_DURATION = 10 * 60 * 1000; // 10 minutos
 
 // -----------------------------------------------------
-// Contato para notificação (Operador / Responsável)
+// Contato “operador geral” (pode ou não ser usado)
 // -----------------------------------------------------
-const OPERATOR_NUMBER = "5594992204653"; // Ajuste para o número desejado (sem +)
+const OPERATOR_NUMBER = "5594992204653"; // Ex.: seu contato principal
+
+// -----------------------------------------------------
+// Contatos específicos para handoff
+// -----------------------------------------------------
+const HUMAN_AGENTS = {
+  transporte_escolar: "5594991989803", // +55 94 99198-9803 (sem +)
+  transporte_administrativo: "5594984131399", // +55 94 98413-1399 (sem +)
+};
 
 // -----------------------------------------------------
 // Servidor Express
@@ -93,7 +101,7 @@ app.post("/webhook", async (req, res) => {
     if (userState[senderNumber] && userState[senderNumber].step) {
       switch (userState[senderNumber].step) {
         // -------------------------------------------------
-        // SUBMENU PAIS/RESPONSÁVEIS
+        // FLUXO INFORME (Pais)
         // -------------------------------------------------
         case "parents_informe_type":
           if (message.interactive && message.interactive.button_reply) {
@@ -637,10 +645,8 @@ app.post("/webhook", async (req, res) => {
           break;
 
         case "parents_option_4":
-          await endConversation(
-            senderNumber,
-            "Encaminharemos você para um atendente em breve. Obrigado!"
-          );
+          // Encaminha para atendente humano de transporte escolar
+          await handoffToHuman(senderNumber, "transporte_escolar");
           break;
 
         case "parents_option_5":
@@ -737,6 +743,23 @@ Transporte Público: ${infoTransporte}
 
   res.sendStatus(200);
 });
+
+// -----------------------------------------------------
+// HANDOFF: Encaminhar para atendente humano
+// -----------------------------------------------------
+async function handoffToHuman(senderNumber, subject) {
+  // Seleciona número do agente baseado no assunto
+  const agentNumber = HUMAN_AGENTS[subject] || OPERATOR_NUMBER;
+  // Notifica o agente
+  const handoffMsg = `👋 *Nova solicitação de conversa* sobre *${subject}*.\nUsuário: +${senderNumber}\nPor favor, entre em contato.`;
+  await sendTextMessage(agentNumber, handoffMsg);
+
+  // Encerra a conversa do bot com o usuário
+  await endConversation(
+    senderNumber,
+    "Um atendente foi acionado e entrará em contato em breve. Obrigado!"
+  );
+}
 
 // -----------------------------------------------------
 // FUNÇÕES DE BANCO E LÓGICA
