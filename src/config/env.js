@@ -17,9 +17,9 @@ module.exports = {
   BOT_PORT: process.env.BOT_PORT || 3000,
 
   // Contatos para notificação
-  OPERATOR_NUMBER: "5594992204653",
+  OPERATOR_NUMBER: "5594984131399",
   HUMAN_AGENTS: {
-    transporte_escolar: "5594991989803",
+    transporte_escolar: "5594984131399",
     transporte_administrativo: "5594984131399",
   },
 };
