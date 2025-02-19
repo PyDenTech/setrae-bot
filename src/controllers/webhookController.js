@@ -1,5 +1,7 @@
 /*
-Esse arquivo faz:
+Arquivo: routes.js (exemplo de nome)
+---------------------------------
+Este arquivo faz:
 1. Gerencia as rotas do Express para o webhook principal
 2. Recebe eventos do WhatsApp e identifica o tipo de mensagem
 3. Controla o fluxo de conversas baseado no userState e envia respostas
@@ -78,7 +80,7 @@ router.post("/webhook", async (req, res) => {
             userState[senderNumber].step = "parents_informe_desc";
             await sendTextMessage(
               senderNumber,
-              "Descreva o informe (denúncia, elogio ou sugestão):"
+              "Poderia, por favor, descrever o informe (denúncia, elogio ou sugestão)?"
             );
           }
           break;
@@ -88,7 +90,7 @@ router.post("/webhook", async (req, res) => {
           await saveParentsInforme(senderNumber, userState[senderNumber]);
           await endConversation(
             senderNumber,
-            "Informe registrado com sucesso! Obrigado."
+            "Seu informe foi registrado com sucesso! Agradecemos a sua contribuição. Caso necessite de mais assistência, ficamos à disposição."
           );
           break;
 
@@ -99,12 +101,12 @@ router.post("/webhook", async (req, res) => {
               userState[senderNumber].step = "nome_responsavel";
               await sendTextMessage(
                 senderNumber,
-                "Ótimo! Por favor, insira o nome completo do responsável pela solicitação:"
+                "Ótimo! Por gentileza, informe o nome completo do(a) responsável pela solicitação:"
               );
             } else {
               await endConversation(
                 senderNumber,
-                "Você não concordou com os termos. Atendimento encerrado."
+                "Sem problemas. Como você não concordou com os termos, não podemos prosseguir com o serviço. Atendimento encerrado."
               );
             }
           }
@@ -115,14 +117,17 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "cpf_responsavel";
           await sendTextMessage(
             senderNumber,
-            "Por favor, insira o CPF do responsável:"
+            "Poderia, por favor, informar o CPF do(a) responsável?"
           );
           break;
 
         case "cpf_responsavel":
           userState[senderNumber].cpf_responsavel = text;
           userState[senderNumber].step = "cep";
-          await sendTextMessage(senderNumber, "Por favor, insira o CEP:");
+          await sendTextMessage(
+            senderNumber,
+            "Poderia me informar o CEP do endereço, por favor?"
+          );
           break;
 
         case "cep":
@@ -130,7 +135,7 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "numero";
           await sendTextMessage(
             senderNumber,
-            "Por favor, insira o número da residência:"
+            "Qual é o número da residência, por gentileza?"
           );
           break;
 
@@ -139,7 +144,7 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "endereco";
           await sendTextMessage(
             senderNumber,
-            'Por favor, insira o nome da sua rua e o bairro (Ex: "Rua X, Bairro Y"):'
+            'Certo! Agora, informe o nome da rua e o bairro (por exemplo: "Rua X, Bairro Y"):'
           );
           break;
 
@@ -148,7 +153,7 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "localizacao_atual";
           await sendTextMessage(
             senderNumber,
-            "Por favor, compartilhe a localização atual da residência do aluno (latitude/longitude):"
+            "Por favor, compartilhe a localização (latitude/longitude) da residência do(a) aluno(a). Isso nos ajudará a verificar a rota."
           );
           break;
 
@@ -159,12 +164,12 @@ router.post("/webhook", async (req, res) => {
             userState[senderNumber].step = "comprovante_residencia";
             await sendTextMessage(
               senderNumber,
-              "Agora, envie uma foto ou PDF do seu comprovante de residência:"
+              "Localização recebida com sucesso! Agora, envie uma foto ou PDF do comprovante de residência, por favor."
             );
           } else {
             await sendTextMessage(
               senderNumber,
-              "Você não enviou uma localização válida. Por favor, compartilhe sua localização atual novamente."
+              "Não detectamos uma localização válida. Poderia enviar novamente, por favor?"
             );
           }
           break;
@@ -175,12 +180,12 @@ router.post("/webhook", async (req, res) => {
             userState[senderNumber].step = "id_matricula_aluno";
             await sendTextMessage(
               senderNumber,
-              "Comprovante recebido! Por favor, insira o ID de matrícula ou CPF do aluno (somente números):"
+              "Comprovante recebido! Agora, insira o ID de matrícula ou CPF do(a) aluno(a) (somente números), por favor."
             );
           } else {
             await sendTextMessage(
               senderNumber,
-              "Por favor, envie um documento ou imagem válido do comprovante de residência."
+              "Não conseguimos identificar seu arquivo. Por gentileza, envie o comprovante de residência em formato de imagem ou PDF."
             );
           }
           break;
@@ -194,12 +199,12 @@ router.post("/webhook", async (req, res) => {
               userState[senderNumber].step = "deficiencia";
               await sendTextMessage(
                 senderNumber,
-                `Aluno encontrado! Nome: ${alunoData.pessoa_nome}. Ele possui alguma deficiência? Responda "Sim" ou "Não".`
+                `Aluno encontrado: ${alunoData.pessoa_nome}. Ele(a) possui alguma deficiência? Responda "Sim" ou "Não".`
               );
             } else {
               await endConversation(
                 senderNumber,
-                "ID de matrícula ou CPF do aluno não encontrado. Encerrando atendimento."
+                "Não foi possível localizar esse ID de matrícula ou CPF. Encerrando o atendimento, mas estamos à disposição se precisar tentar novamente."
               );
             }
           }
@@ -211,7 +216,7 @@ router.post("/webhook", async (req, res) => {
             userState[senderNumber].step = "laudo_deficiencia";
             await sendTextMessage(
               senderNumber,
-              "Por favor, envie o laudo médico que comprove a deficiência (imagem ou PDF)."
+              "Entendido. Por favor, envie o laudo médico que comprove a deficiência (imagem ou PDF)."
             );
           } else {
             userState[senderNumber].deficiencia = false;
@@ -219,7 +224,7 @@ router.post("/webhook", async (req, res) => {
             userState[senderNumber].step = "celular_responsavel";
             await sendTextMessage(
               senderNumber,
-              "Agora, informe o telefone do responsável:"
+              "Tudo bem. Agora, por favor, informe o telefone do(a) responsável."
             );
           }
           break;
@@ -230,12 +235,12 @@ router.post("/webhook", async (req, res) => {
             userState[senderNumber].step = "celular_responsavel";
             await sendTextMessage(
               senderNumber,
-              "Laudo médico recebido! Agora, informe o telefone do responsável:"
+              "Laudo médico recebido. Agora, por favor, informe o telefone do(a) responsável."
             );
           } else {
             await sendTextMessage(
               senderNumber,
-              "Por favor, envie um documento ou imagem válido do laudo médico."
+              "Não conseguimos identificar seu arquivo. Poderia, por gentileza, enviar o laudo em imagem ou PDF?"
             );
           }
           break;
@@ -254,7 +259,7 @@ router.post("/webhook", async (req, res) => {
               userState[senderNumber].zoneamento = true;
               await sendTextMessage(
                 senderNumber,
-                "Localização dentro de um zoneamento cadastrado."
+                "Parece que sua localização está dentro de um zoneamento cadastrado."
               );
               const escolaID = userState[senderNumber].escola_id;
               const zoneSchoolRelation = await checkZoneSchool(
@@ -264,19 +269,19 @@ router.post("/webhook", async (req, res) => {
               if (zoneSchoolRelation) {
                 await sendTextMessage(
                   senderNumber,
-                  "Esse zoneamento está atribuído à mesma escola do aluno."
+                  "Este zoneamento está vinculado à mesma escola do(a) aluno(a)."
                 );
               } else {
                 await sendTextMessage(
                   senderNumber,
-                  "Esse zoneamento não está diretamente vinculado à escola do aluno. Prosseguiremos com a solicitação."
+                  "Este zoneamento não está diretamente vinculado à escola do(a) aluno(a). Continuaremos com a solicitação, mas fique atento(a) a possíveis divergências."
                 );
                 userState[senderNumber].zoneamento = false;
               }
             } else {
               await sendTextMessage(
                 senderNumber,
-                "Localização fora dos zoneamentos conhecidos. Vamos prosseguir."
+                "Aparentemente sua localização está fora dos zoneamentos conhecidos. Prosseguiremos mesmo assim."
               );
               userState[senderNumber].zoneamento = false;
             }
@@ -284,7 +289,7 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "observacoes";
           await sendTextMessage(
             senderNumber,
-            'Insira observações adicionais (ou "nenhuma" se não tiver):'
+            'Poderia inserir alguma observação adicional? Se não houver, digite "nenhuma".'
           );
           break;
 
@@ -294,7 +299,7 @@ router.post("/webhook", async (req, res) => {
           await saveRouteRequest(senderNumber, userState[senderNumber]);
           await endConversation(
             senderNumber,
-            "Solicitação de rota enviada com sucesso! Se precisar de mais ajuda futuramente, estamos à disposição. Conversa encerrada."
+            "Sua solicitação de rota foi enviada com sucesso! Muito obrigado pelo seu contato. Se precisar de qualquer ajuda no futuro, é só nos procurar."
           );
           break;
 
@@ -306,7 +311,7 @@ router.post("/webhook", async (req, res) => {
           } else {
             await sendTextMessage(
               senderNumber,
-              "Não foi possível identificar sua localização. Por favor, envie novamente."
+              "Não conseguimos identificar sua localização. Poderia tentar novamente, por favor?"
             );
           }
           break;
@@ -316,7 +321,7 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "driver_setor";
           await sendTextMessage(
             senderNumber,
-            "Informe seu setor/departamento (Ex: Gabinete, RH, etc.):"
+            "Por favor, informe o setor/departamento (ex: Gabinete, RH etc.):"
           );
           break;
 
@@ -325,14 +330,17 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "driver_qtd";
           await sendTextMessage(
             senderNumber,
-            "Quantas pessoas irão nesse transporte?"
+            "Quantas pessoas irão utilizar este transporte?"
           );
           break;
 
         case "driver_qtd":
           userState[senderNumber].driver_qtd = text;
           userState[senderNumber].step = "driver_destino";
-          await sendTextMessage(senderNumber, "Qual o destino da viagem?");
+          await sendTextMessage(
+            senderNumber,
+            "Entendi. Qual será o destino da viagem?"
+          );
           break;
 
         case "driver_destino":
@@ -340,7 +348,7 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "driver_local_origem";
           await sendTextMessage(
             senderNumber,
-            "Por favor, compartilhe a localização de origem (onde o motorista deve buscar):"
+            "Poderia, por favor, compartilhar a localização de origem (onde o motorista deve buscar)?"
           );
           break;
 
@@ -351,7 +359,7 @@ router.post("/webhook", async (req, res) => {
             userState[senderNumber].step = "driver_carga_await";
             await sendInteractiveMessageWithButtons(
               senderNumber,
-              "Há alguma carga que exija carro com carroceria?",
+              "Há alguma carga que exija um veículo com carroceria?",
               "",
               "Sim",
               "driver_has_carga_yes",
@@ -361,7 +369,7 @@ router.post("/webhook", async (req, res) => {
           } else {
             await sendTextMessage(
               senderNumber,
-              "Você não enviou uma localização válida. Por favor, compartilhe a localização de origem novamente."
+              "Não detectamos uma localização válida. Poderia reenviar a localização de origem, por gentileza?"
             );
           }
           break;
@@ -375,7 +383,7 @@ router.post("/webhook", async (req, res) => {
               userState[senderNumber].step = "driver_hora_necessidade";
               await sendTextMessage(
                 senderNumber,
-                "Entendido. Precisaremos de um veículo com carroceria. Qual o horário de necessidade do carro (Ex: 08:00)?"
+                "Entendi. Precisaremos de um veículo com carroceria. Qual o horário em que o veículo será necessário (ex: 08:00)?"
               );
             } else {
               userState[senderNumber].driver_has_carga = false;
@@ -383,7 +391,7 @@ router.post("/webhook", async (req, res) => {
               userState[senderNumber].step = "driver_hora_necessidade";
               await sendTextMessage(
                 senderNumber,
-                "Ótimo, qualquer carro disponível serve. Qual o horário de necessidade do carro (Ex: 08:00)?"
+                "Perfeito, qualquer veículo disponível será adequado. Poderia informar o horário em que o carro será necessário (ex: 08:00)?"
               );
             }
           }
@@ -394,7 +402,7 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "driver_observacoes";
           await sendTextMessage(
             senderNumber,
-            'Alguma observação extra? (ou digite "nenhuma")'
+            'Deseja registrar alguma observação extra? (Se não houver, digite "nenhuma")'
           );
           break;
 
@@ -404,11 +412,11 @@ router.post("/webhook", async (req, res) => {
           await saveDriverRequest(senderNumber, userState[senderNumber]);
           await sendTextMessage(
             senderNumber,
-            "Solicitação enviada! O motorista só poderá aguardar 15 minutos na zona urbana e 2 horas na zona rural."
+            "Sua solicitação foi registrada. Lembre-se de que o motorista poderá aguardar até 15 minutos na zona urbana e 2 horas na zona rural."
           );
           await endConversation(
             senderNumber,
-            "Solicitação de motorista registrada!"
+            "Agradecemos o seu contato! Sua solicitação de motorista foi enviada com sucesso."
           );
           break;
 
@@ -417,7 +425,7 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "school_car_qtd_passageiros";
           await sendTextMessage(
             senderNumber,
-            "Quantos passageiros irão no veículo?"
+            "Quantos passageiros vão necessitar do veículo?"
           );
           break;
 
@@ -426,7 +434,7 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "school_car_descricao_demanda";
           await sendTextMessage(
             senderNumber,
-            "Descreva a demanda (motivo da solicitação):"
+            "Poderia descrever a demanda (motivo da solicitação)?"
           );
           break;
 
@@ -435,7 +443,7 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "school_car_zona_await";
           await sendInteractiveMessageWithButtons(
             senderNumber,
-            "É zona urbana ou zona rural?",
+            "Por favor, informe se é zona urbana ou rural?",
             "",
             "Urbana",
             "zona_urbana",
@@ -452,7 +460,7 @@ router.post("/webhook", async (req, res) => {
             userState[senderNumber].step = "school_car_tempo_est";
             await sendTextMessage(
               senderNumber,
-              "Qual o tempo estimado de uso do veículo (ex: 2 horas)?"
+              "Qual o tempo estimado de uso do veículo? (Ex: 2 horas)"
             );
           }
           break;
@@ -462,14 +470,17 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber].step = "school_car_data";
           await sendTextMessage(
             senderNumber,
-            "Informe a data do agendamento (ex: 12/02/2025):"
+            "Poderia me informar a data do agendamento? (Ex: 12/02/2025)"
           );
           break;
 
         case "school_car_data":
           userState[senderNumber].data_agendamento = text;
           userState[senderNumber].step = "school_car_hora";
-          await sendTextMessage(senderNumber, "Para qual horário? (ex: 08:00)");
+          await sendTextMessage(
+            senderNumber,
+            "Agora, qual será o horário? (Ex: 08:00)"
+          );
           break;
 
         case "school_car_hora":
@@ -477,7 +488,7 @@ router.post("/webhook", async (req, res) => {
           await saveSchoolCarRequest(senderNumber, userState[senderNumber]);
           await endConversation(
             senderNumber,
-            "Solicitação de carro registrada com sucesso!"
+            "Pronto! Sua solicitação de carro para a escola foi registrada com sucesso. Agradecemos o contato!"
           );
           break;
 
@@ -488,7 +499,7 @@ router.post("/webhook", async (req, res) => {
             userState[senderNumber].step = "school_informe_desc";
             await sendTextMessage(
               senderNumber,
-              "Por favor, descreva o informe (detalhes, situação, etc.):"
+              "Certo! Poderia descrever o informe com mais detalhes?"
             );
           }
           break;
@@ -498,15 +509,17 @@ router.post("/webhook", async (req, res) => {
           await saveSchoolInforme(senderNumber, userState[senderNumber]);
           await endConversation(
             senderNumber,
-            "Informe registrado com sucesso! Obrigado."
+            "Informe registrado com sucesso. Agradecemos a sua colaboração!"
           );
           break;
 
         default:
+          // Se o step não estiver previsto, voltamos ao menu principal
           await sendInteractiveListMessage(senderNumber);
       }
       setTimer();
     } else if (message.interactive && message.interactive.list_reply) {
+      // Tratamento das opções do menu (lista interativa)
       const selectedOption = message.interactive.list_reply.id;
 
       switch (selectedOption) {
@@ -520,17 +533,29 @@ router.post("/webhook", async (req, res) => {
           await sendSchoolServersMenu(senderNumber);
           break;
         case "option_4":
-          await sendTextMessage(senderNumber, "Em desenvolvimento...");
-          await endConversation(senderNumber, "Atendimento encerrado.");
+          await sendTextMessage(
+            senderNumber,
+            "Esta seção ainda está em desenvolvimento, mas logo estará disponível."
+          );
+          await endConversation(
+            senderNumber,
+            "Agradecemos a sua compreensão. O atendimento foi encerrado."
+          );
           break;
         case "option_5":
-          await sendTextMessage(senderNumber, "Em desenvolvimento...");
-          await endConversation(senderNumber, "Atendimento encerrado.");
+          await sendTextMessage(
+            senderNumber,
+            "Esta seção ainda está em desenvolvimento, mas logo estará disponível."
+          );
+          await endConversation(
+            senderNumber,
+            "Agradecemos a sua compreensão. O atendimento foi encerrado."
+          );
           break;
         case "option_6":
           await endConversation(
             senderNumber,
-            "Atendimento encerrado. Precisando de algo, é só chamar!"
+            "Atendimento encerrado. Sempre que precisar de algo, é só nos chamar!"
           );
           break;
 
@@ -538,18 +563,18 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber] = "awaiting_aluno_id_or_cpf";
           await sendTextMessage(
             senderNumber,
-            "Por favor, insira o ID de matrícula ou CPF do aluno:"
+            "Para encontrarmos o ponto de parada mais próximo, precisamos do ID de matrícula ou CPF do(a) aluno(a). Poderia enviar?"
           );
           break;
         case "parents_option_2":
           userState[senderNumber] = { step: "termos_uso" };
           await sendTextMessage(
             senderNumber,
-            "Para solicitar concessão de rota, você precisa concordar com os termos. Está ciente das regras de distância mínima e etc.?"
+            "Para solicitar a concessão de rota, precisamos que esteja ciente dos termos (distância mínima, idade etc.)."
           );
           await sendInteractiveMessageWithButtons(
             senderNumber,
-            "Confirma a aceitação dos termos de uso do transporte?",
+            "Você confirma a aceitação dos termos de uso do transporte?",
             "",
             "Sim",
             "aceito_termos",
@@ -561,7 +586,7 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber] = { step: "parents_informe_type" };
           await sendInteractiveMessageWithButtons(
             senderNumber,
-            "Selecione o tipo de informe:",
+            "Por favor, selecione o tipo de informe:",
             "",
             "Denúncia",
             "denuncia",
@@ -578,7 +603,7 @@ router.post("/webhook", async (req, res) => {
         case "parents_option_6":
           await endConversation(
             senderNumber,
-            "Atendimento encerrado. Precisando de algo, é só chamar!"
+            "Atendimento encerrado. Obrigado pelo contato, e sempre que precisar, estamos por aqui!"
           );
           break;
 
@@ -586,7 +611,7 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber] = { step: "driver_name" };
           await sendTextMessage(
             senderNumber,
-            "Para solicitar um motorista, digite seu nome completo:"
+            "Para solicitar um motorista, poderia informar seu nome completo, por favor?"
           );
           break;
         case "speak_to_agent":
@@ -595,7 +620,7 @@ router.post("/webhook", async (req, res) => {
         case "end_service":
           await endConversation(
             senderNumber,
-            "Atendimento encerrado. Precisando de algo, é só chamar!"
+            "Atendimento encerrado. Se precisar de algo no futuro, basta nos enviar uma mensagem."
           );
           break;
         case "back_to_menu":
@@ -606,14 +631,14 @@ router.post("/webhook", async (req, res) => {
           userState[senderNumber] = { step: "school_car_nome_escola" };
           await sendTextMessage(
             senderNumber,
-            "Para solicitar carro, informe o nome da escola:"
+            "Para solicitar um carro, por favor informe o nome da escola."
           );
           break;
         case "school_option_2":
           userState[senderNumber] = { step: "school_informe_tipo" };
           await sendInteractiveMessageWithButtons(
             senderNumber,
-            "Selecione o tipo de informe da escola:",
+            "Qual o tipo de informe deseja registrar?",
             "",
             "Elogio",
             "elogio_escola",
@@ -627,15 +652,17 @@ router.post("/webhook", async (req, res) => {
         case "school_option_5":
           await endConversation(
             senderNumber,
-            "Atendimento encerrado. Precisando de algo, é só chamar!"
+            "Atendimento encerrado. Caso precise de algo, estaremos aqui para ajudar."
           );
           break;
 
         default:
+          // Se a opção não estiver listada, voltamos ao menu principal
           await sendInteractiveListMessage(senderNumber);
       }
       setTimer();
     } else if (message.interactive && message.interactive.button_reply) {
+      // Tratamento de botões fora de contexto de submenu
       const buttonResponse = message.interactive.button_reply.id;
 
       if (buttonResponse === "confirm_yes") {
@@ -643,14 +670,14 @@ router.post("/webhook", async (req, res) => {
       } else if (buttonResponse === "confirm_no") {
         await sendTextMessage(
           senderNumber,
-          "Por favor, verifique o ID de matrícula ou CPF e tente novamente."
+          "Sem problemas. Por favor, verifique o ID de matrícula ou CPF e tente novamente."
         );
         userState[senderNumber] = "awaiting_aluno_id_or_cpf";
       } else if (buttonResponse === "request_transport_yes") {
         userState[senderNumber] = { step: "termos_uso" };
         await sendTextMessage(
           senderNumber,
-          "Para utilizar o transporte escolar, é necessário atender aos critérios de distância mínima, idade mínima e demais normas. Você concorda com estes termos?"
+          "Para solicitar o transporte escolar, é necessário atender aos critérios oficiais (distância, idade etc.). Você confirma estar ciente dessas condições?"
         );
         await sendInteractiveMessageWithButtons(
           senderNumber,
@@ -664,24 +691,25 @@ router.post("/webhook", async (req, res) => {
       } else if (buttonResponse === "request_transport_no") {
         await endConversation(
           senderNumber,
-          "Tudo bem! Se precisar de mais ajuda, é só enviar mensagem."
+          "Tudo bem, não se preocupe. Se precisar de algo no futuro, estamos sempre aqui!"
         );
       }
       setTimer();
     } else if (userState[senderNumber] === "awaiting_aluno_id_or_cpf") {
+      // Fluxo para verificar aluno quando step é uma simples string
       const aluno = await findStudentByIdOrCpf(text);
       if (aluno) {
         userState[senderNumber] = { aluno };
         const infoTransporte = aluno.transporte_escolar_poder_publico
           ? aluno.transporte_escolar_poder_publico
           : "Não informado (provavelmente não usuário)";
-        const alunoInfo = `*Dados do Aluno Encontrado*:
+        const alunoInfo = `*Dados do(a) Aluno(a) Encontrado(a)*:
 Nome: ${aluno.pessoa_nome}
 CPF: ${aluno.cpf || "Não informado"}
 Escola: ${aluno.nome_escola || "Não vinculada"}
 Matrícula: ${aluno.id_matricula || "N/A"}
-Transporte Público: ${infoTransporte}
-        `;
+Transporte Público: ${infoTransporte}`;
+
         await sendInteractiveMessageWithButtons(
           senderNumber,
           alunoInfo,
@@ -694,11 +722,12 @@ Transporte Público: ${infoTransporte}
       } else {
         await endConversation(
           senderNumber,
-          "ID de matrícula ou CPF não encontrado. Atendimento encerrado."
+          "Não encontramos nenhum aluno com este ID de matrícula ou CPF. Atendimento encerrado, mas estamos à disposição se precisar tentar novamente."
         );
       }
       setTimer();
     } else {
+      // Se nenhuma condição se aplica, abre o menu principal
       await sendInteractiveListMessage(senderNumber);
       setTimer();
     }

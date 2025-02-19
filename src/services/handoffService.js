@@ -11,12 +11,12 @@ const endConversation = require("../utils/endConversation");
 
 async function handoffToHuman(senderNumber, subject) {
   const agentNumber = HUMAN_AGENTS[subject] || OPERATOR_NUMBER;
-  const handoffMsg = `👋 *Nova solicitação de conversa* sobre *${subject}*.\nUsuário: +${senderNumber}\nPor favor, entre em contato.`;
+  const handoffMsg = `👋 *Nova solicitação de conversa* sobre *${subject}*.\nUsuário: +${senderNumber}\nPor gentileza, entre em contato assim que possível.`;
   await sendTextMessage(agentNumber, handoffMsg);
 
   await endConversation(
     senderNumber,
-    "Um atendente foi acionado e entrará em contato em breve. Obrigado!"
+    "Ótimo! Um de nossos atendentes foi acionado e entrará em contato o mais breve possível. Obrigado(a) pela sua paciência!"
   );
 }
 

@@ -1,7 +1,9 @@
 /*
-Esse arquivo faz:
+Arquivo: dbService.js
+---------------------------------
+Este arquivo faz:
 1. Consulta e salva dados no banco (PostgreSQL) para o fluxo do bot
-2. Funções de SELECT e INSERT relacionadas a alunos, rotas, informes, etc.
+2. Funções de SELECT e INSERT relacionadas a alunos, rotas, informes etc.
 */
 
 const pool = require("../db/pool");
@@ -89,13 +91,16 @@ async function saveRouteRequest(senderNumber, state) {
     client.release();
 
     console.log("Solicitação de rota salva na tabela cocessao_rota!");
-    const notifyMsg = `🚌 *Nova solicitação de ROTA!* 🚌
-**Responsável:** ${nome_responsavel}
-**CPF:** ${cpf_responsavel}
-**Endereço:** ${endereco}, CEP: ${cep}
-Observações: ${observacoes || "Nenhuma"} 
-(_Outros detalhes no sistema_);
-`;
+
+    const notifyMsg = `🚌 *Nova Solicitação de ROTA* 🚌
+
+*Responsável:* ${nome_responsavel}
+*CPF:* ${cpf_responsavel}
+*Endereço:* ${endereco}, CEP: ${cep}
+*Observações:* ${observacoes || "Nenhuma"}
+
+Por favor, verifique no sistema e tome as providências necessárias.`;
+
     await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
   } catch (error) {
     console.error("Erro ao salvar a solicitação de rota:", error);
@@ -148,23 +153,24 @@ async function saveDriverRequest(senderNumber, state) {
     await client.query(insertQuery, values);
     client.release();
 
-    console.log(
-      "Solicitação de motorista salva na tabela solicitacao_carros_administrativos!"
-    );
-    const cargoStr = driver_has_carga
-      ? "Sim (caminhonete necessária)"
-      : "Não (qualquer carro)";
-    const notifyMsg = `🚨 *NOVA SOLICITAÇÃO DE MOTORISTA!* 🚨
+    console.log("Solicitação de motorista salva na tabela solicitacao_carros_administrativos!");
+
+    const cargaMsg = driver_has_carga
+      ? "Sim (é necessária uma caminhonete ou veículo com espaço especial)."
+      : "Não (qualquer veículo atende).";
+
+    const notifyMsg = `🚨 *Nova Solicitação de Motorista* 🚨
 
 *Requerente:* ${driver_name}
 *Setor:* ${driver_setor}
-*Quantidade de pessoas:* ${driver_qtd}
+*Quantidade de Pessoas:* ${driver_qtd}
 *Destino:* ${driver_destino}
 *Horário:* ${driver_hora_necessidade}
-*Carga Especial:* ${cargoStr}
+*Carga Especial:* ${cargaMsg}
 *Observações:* ${driver_observacoes || "Nenhuma"}
 
-Por favor, verifique e providencie um motorista.`;
+Por favor, verifique no sistema e disponibilize um motorista.`;
+
     await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
   } catch (error) {
     console.error("Erro ao salvar a solicitação de motorista:", error);
@@ -208,10 +214,9 @@ async function saveSchoolCarRequest(senderNumber, state) {
     await client.query(insertQuery, values);
     client.release();
 
-    console.log(
-      "Solicitação de carro (escola) salva na tabela solicitacao_carro_escola!"
-    );
-    const notifyMsg = `🚐 *NOVA SOLICITAÇÃO DE CARRO (Escola)* 🚐
+    console.log("Solicitação de carro (escola) salva na tabela solicitacao_carro_escola!");
+
+    const notifyMsg = `🚐 *Nova Solicitação de Carro (Escola)* 🚐
 
 *Escola:* ${nome_escola}
 *Passageiros:* ${qtd_passageiros}
@@ -221,7 +226,8 @@ async function saveSchoolCarRequest(senderNumber, state) {
 *Data:* ${data_agendamento}
 *Hora:* ${hora_agendamento}
 
-Por favor, verifique e providencie um carro.`;
+Por favor, verifique no sistema e providencie o veículo necessário.`;
+
     await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
   } catch (error) {
     console.error("Erro ao salvar solicitação de carro (escola):", error);
@@ -245,12 +251,14 @@ async function saveSchoolInforme(senderNumber, state) {
     client.release();
 
     console.log("Informe da escola salvo em informes_escola!");
-    const notifyMsg = `✉️ *NOVO INFORME DA ESCOLA* ✉️
+
+    const notifyMsg = `✉️ *Novo Informe da Escola* ✉️
 
 *Tipo:* ${informe_tipo}
 *Descrição:* ${informe_descricao}
 
 Verifique no sistema para mais detalhes.`;
+
     await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
   } catch (error) {
     console.error("Erro ao salvar informe da escola:", error);
@@ -274,12 +282,14 @@ async function saveParentsInforme(senderNumber, state) {
     client.release();
 
     console.log("Informe de Pais/Responsáveis salvo em informes_parents!");
-    const notifyMsg = `✉️ *NOVO INFORME (Pais/Responsáveis)* ✉️
+
+    const notifyMsg = `✉️ *Novo Informe (Pais/Responsáveis)* ✉️
 
 *Tipo:* ${parents_informe_type}
 *Descrição:* ${parents_informe_desc}
 
 Verifique no sistema para mais detalhes.`;
+
     await sendTextMessage(OPERATOR_NUMBER, notifyMsg);
   } catch (error) {
     console.error("Erro ao salvar informe de Pais/Responsáveis:", error);
